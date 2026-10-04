@@ -116,6 +116,7 @@ class THR:
     firmware: int = 0
     symbols: list[str] = field(default_factory=list)
     events: queue.Queue = field(default_factory=queue.Queue)
+    saved_memories: set = field(default_factory=set)
     _counters: dict = field(default_factory=lambda: {0: 0, 1: 0})
 
     @classmethod
@@ -166,6 +167,10 @@ class THR:
         if not ack.ok:
             raise THRError(f"Amp rejected the unlock key for firmware {self.firmware_text}.")
         LOG.info("MIDI control unlocked (firmware %s)", self.firmware_text)
+        try:
+            self.command(1, 0x01)
+        except THRError:
+            LOG.debug("No answer to the B-group firmware question")
         if load_symbols:
             self.symbols = self.load_symbols()
 
@@ -346,10 +351,9 @@ class THR:
         """
         if not 0 <= index <= 4:
             raise THRError("User memories are numbered 1 to 5.")
-        wait = self.store_cooldown_left()
-        if wait > 0:
-            LOG.info("Waiting %.0f s for the amp to finish the previous save", wait)
-            time.sleep(wait)
+        if index in self.saved_memories:
+            raise THRError(f"Memory {index + 1} was already saved since connecting. The amp's firmware hangs if "
+                           "the same memory is saved twice, so turn the amp off and on before saving it again.")
         self.poll_events(0.2)
         LOG.info("Storing %d bytes into user memory %d", len(dump), index + 1)
         self._send(1, words(0x0D, len(dump) + 20, index, len(dump) + 12, 0, 1, 0))
@@ -361,17 +365,31 @@ class THR:
         if not self._await_answer(1, timeout=5.0).ok:
             LOG.warning("The amp rejected the save to memory %d", index + 1)
             return False
-        self._wait_for_store_report(index)
-        confirmed = self._confirm_store(index, dump)
-        self._last_store = time.monotonic()
-        return confirmed
+        self.saved_memories.add(index)
+        time.sleep(0.3)
+        return self._confirm_store(index, dump)
 
-    STORE_COOLDOWN = 15.0
+    def _confirm_store(self, index: int, dump: bytes, timeout: float = 20.0) -> bool:
+        """Wait until the memory reads back with the saved name.
 
-    def store_cooldown_left(self) -> float:
-        """Seconds until another save is safe. A second save soon after the first hung the amp."""
-        last = getattr(self, "_last_store", None)
-        return 0.0 if last is None else max(0.0, self.STORE_COOLDOWN - (time.monotonic() - last))
+        The amp acknowledges a save before it finishes writing, sometimes by several
+        seconds, and a second save sent during that time hung the amp until it was
+        power-cycled. So nothing else goes to the amp until the new name reads back.
+        """
+        from .patch import dump_name
+
+        expected = dump_name(dump)
+        started = time.monotonic()
+        while True:
+            stored = self.patch_name(index)
+            if not expected or stored == expected:
+                LOG.info("Memory %d now holds %r (confirmed after %.1f s)", index + 1, stored,
+                         time.monotonic() - started)
+                return True
+            if time.monotonic() - started > timeout:
+                LOG.warning("Memory %d still reads %r %.0f s after saving %r", index + 1, stored, timeout, expected)
+                return False
+            time.sleep(1.0)
 
     def _confirm_store(self, index: int, dump: bytes, timeout: float = 20.0) -> bool:
         """Wait until the memory reads back with the saved name.

@@ -32,6 +32,12 @@ The **Recording level** panel shows what your computer records over USB, with a 
 
 Changing the amp model on a THR-II resets gain, master, and the tone controls to 50, which can be a sudden jump in volume. The app keeps your knob settings across amp changes unless you clear **Keep knobs when changing amps**. Changing an effect's model loads that model's default settings.
 
+## User memories
+
+**Save current tone...** on the User memories panel stores the current tone in one of the amp's five memories, under a name you choose; it does the same job as holding a USER MEMORY button on the amp. In the Presets window, the save button on a preset stores that preset in a memory under the preset's name (editable), and can then put your current tone back. `python3 -m thr2 store N --name NAME` saves from a terminal.
+
+The THR30II's firmware hangs if the same memory is saved twice without turning the amp off and on; saving different memories back to back is fine. The app refuses a second save to the same memory during a session and says why. If the amp stops responding anyway, turn it off and on.
+
 Loading a user memory from the app isn't verified yet. It replaces the current settings, so test it on a tone you don't mind losing.
 
 ## Presets

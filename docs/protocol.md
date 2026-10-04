@@ -66,6 +66,8 @@ The unlock lasts until the amp powers off. Repeating it is harmless.
 | `0x0D` | A | code | Read a system setting | Verified |
 | `0x0E` | A | code, type, value | Write a system setting | Verified with codes `0x0D` (DI mode) and `0x06` (Extended Stereo) |
 | `0x0E` | B, in-frame | memory index | Load a user memory | Not yet tested |
+| `0x0D` | B | header words then 210-byte body frames | Save a raw dump into a user memory | Verified; see "Saving to a user memory" |
+| `0x01` | B | none | Firmware version (second group) | Verified. Sent once after unlocking; without it, the first B-group answer in a session came back empty. |
 
 Answers use opcode `0x01`, followed by a length word and the data. Multi-frame answers continue in frames with `part` 1, 2, and so on. Change reports from the amp use opcode `0x04` (parameter: unit, param, type, value), `0x03` (unit type: unit, symbol), `0x02` (user memory recalled), and `0x06` (ready marker).
 
@@ -101,6 +103,17 @@ Read with opcode `0x0D` and write with `0x0E`. The answer is a status word, a ty
 | `0x0D` | Guitar DI mode (record dry) | 0. Writing 1 and then 0 was acknowledged and read back correctly. |
 | `0x0E` | Speaker tuner mode | 1 |
 | `0x0F` | Eco recharge | 1 |
+
+## Saving to a user memory (verified)
+
+- Header frame (group B): words `0x0D`, data length + 20, memory index (0-based), data length + 12, then `0`, `1`, `0`. The data is a raw patch dump, the same bytes a dump request returns after its four leading words. Body frames carry the data in 210-byte pieces; they share one frame counter (header counter + 1) and number their pieces 0, 1, 2 in the `part` byte.
+- The amp acknowledges with a normal answer frame and doesn't send an opcode `0x02` report. The new name reads back right away.
+- Saving the same memory twice without turning the amp off and on hangs the amp (five times in testing, by Bluetooth and USB, with gaps up to 15 seconds). The second save is still written. Saving different memories back to back works.
+- The memory name is the first value of the dump's meta section and can be rewritten before saving (up to 63 characters plus NUL).
+
+## Batched changes (verified)
+
+Sending six parameter changes before collecting their six answers works. Over USB, 34 changes took 58 ms.
 
 ## USB levels
 

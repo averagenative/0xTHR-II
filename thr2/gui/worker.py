@@ -54,6 +54,7 @@ class AmpWorker(threading.Thread):
         self._refresh_requested = False
         self.thr: THR | None = None
         self.last_patch = None
+        self.saved_memories: set = set()
 
     def stop(self) -> None:
         self._stop.set()
@@ -115,6 +116,7 @@ class AmpWorker(threading.Thread):
             GLib.idle_add(self._on_status, False, f"Connection error: {err}. See Console.")
             return False
         self._last_error = None
+        self.thr.saved_memories = self.saved_memories
         LOG.info("Connected over %s", self.thr.midi.kind)
         GLib.idle_add(self._on_status, True, self.thr.midi.kind)
         self._refresh()
@@ -207,11 +209,39 @@ class AmpWorker(threading.Thread):
             if name:
                 dump = rename_dump(dump, name)
             ok = self.thr.store_memory(index, dump)
-        except Exception:
-            GLib.idle_add(self._on_result, "stored", index, False)
+        except THRError as err:
+            GLib.idle_add(self._on_result, "stored", index, False, str(err))
+            return
+        except Exception as err:
+            GLib.idle_add(self._on_result, "stored", index, False, str(err))
             raise
         self._refresh_requested = True
-        GLib.idle_add(self._on_result, "stored", index, ok)
+        GLib.idle_add(self._on_result, "stored", index, ok, None)
+
+    def _cmd_store_preset(self, preset: dict, name: str, index: int, hold: dict | None, restore: bool) -> None:
+        from ..patch import rename_dump
+        if index in self.saved_memories:
+            GLib.idle_add(self._on_result, "stored", index, False,
+                          f"Memory {index + 1} was already saved. Turn the amp off and on before saving it again.")
+            return
+        try:
+            before = self.thr.dump()
+            backup = thrl6p.from_patch(before, "Tone before saving", firmware=self.thr.firmware) if restore else None
+
+            def progress(done: int, total: int) -> None:
+                GLib.idle_add(self._on_result, "progress", name, done, total)
+
+            thrl6p.apply(self.thr, preset, hold, before, progress)
+            dump = rename_dump(self.thr.dump_raw(), name)
+            ok = self.thr.store_memory(index, dump)
+            if backup is not None:
+                LOG.info("Restoring the tone from before saving")
+                thrl6p.apply(self.thr, backup)
+        except Exception as err:
+            GLib.idle_add(self._on_result, "stored", index, False, str(err))
+            raise
+        self._refresh_requested = True
+        GLib.idle_add(self._on_result, "stored", index, ok, None)
 
     def _track(self, event) -> None:
         """Keep the cached settings in step with knob changes made on the amp."""

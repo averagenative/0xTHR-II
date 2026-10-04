@@ -129,6 +129,11 @@ class PresetsDialog(Adw.Dialog):
             for entry in entries:
                 row = Adw.ActionRow(title=GLib.markup_escape_text(entry.name), subtitle=GLib.markup_escape_text(describe(entry)),
                                     activatable=True)
+                save = Gtk.Button(icon_name="document-save-symbolic", valign=Gtk.Align.CENTER,
+                                  tooltip_text="Save to one of the amp's memories")
+                save.add_css_class("flat")
+                save.connect("clicked", self._save_to_memory, entry)
+                row.add_suffix(save)
                 row.icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
                 row.spinner = Adw.Spinner(visible=False)
                 row.add_suffix(row.spinner)
@@ -145,6 +150,23 @@ class PresetsDialog(Adw.Dialog):
         self.window.prefs[key] = row.get_active()
         from . import settings
         settings.save(self.window.prefs)
+
+    def _save_to_memory(self, _button, entry: library.Entry) -> None:
+        if not self.window.is_connected():
+            self.toasts.add_toast(Adw.Toast(title="Connect the amp to save a memory."))
+            return
+        try:
+            preset = thrl6p.read(entry.path)
+        except thrl6p.PresetError as err:
+            self.toasts.add_toast(Adw.Toast(title=str(err)))
+            return
+        free = next((i for i in range(5) if i not in self.window.worker.saved_memories), 0)
+        self.window.ask_memory_slot(
+            f"Save '{entry.name}' to a memory",
+            "The app loads this preset, stores it in the memory you pick, and then can go back to your tone.",
+            entry.name[:63], free,
+            lambda index, name, restore: self.window.store_preset(preset, name or entry.name, index, restore),
+            offer_restore=True, parent=self)
 
     def set_applying(self, name: str | None) -> None:
         """Show a spinner on the preset being applied, or clear it when ``name`` is None."""

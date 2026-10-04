@@ -331,18 +331,37 @@ class THRWindow(Adw.ApplicationWindow):
         if not self.is_connected():
             self.toasts.add_toast(Adw.Toast(title="Connect the amp to save a memory."))
             return
-        names = [self.state.memory_names[i] or f"Memory {i + 1}" for i in range(5)]
         active = self.state.system.get("user_setting") or 0
+        self.ask_memory_slot(
+            "Save to a user memory", "This replaces the memory you pick on the amp with the current tone.",
+            self.state.patch.name or self.state.memory_names[active], active,
+            lambda index, name, _restore: self._store_current(index, name))
+
+    def _store_current(self, index: int, name: str) -> None:
+        self.log.info("Saving current tone to memory %d as %r", index + 1, name)
+        self._status("busy", f"Saving to memory {index + 1}...")
+        self.worker.submit("store_memory", index, name)
+
+    def ask_memory_slot(self, heading: str, body: str, name_text: str, selected: int, on_save,
+                        offer_restore: bool = False, parent=None) -> None:
+        """Ask which memory to replace and under what name, then call on_save(index, name, restore)."""
+        names = [self.state.memory_names[i] or f"Memory {i + 1}" for i in range(5)]
+        saved = sorted(i + 1 for i in self.worker.saved_memories)
         slot = Adw.ComboRow(title="Memory", model=Gtk.StringList.new([f"{i + 1}: {n}" for i, n in enumerate(names)]),
-                            selected=active if 0 <= active < 5 else 0)
-        name = Adw.EntryRow(title="Name", text=self.state.patch.name or names[active])
+                            selected=selected if 0 <= selected < 5 else 0)
+        name = Adw.EntryRow(title="Name", text=name_text or "")
         rows = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         rows.add_css_class("boxed-list")
         rows.append(slot)
         rows.append(name)
-        dialog = Adw.AlertDialog(heading="Save to a user memory",
-                                 body="This replaces the memory you pick on the amp with the current tone.",
-                                 extra_child=rows)
+        restore = None
+        if offer_restore:
+            restore = Adw.SwitchRow(title="Go back to my current tone", active=True)
+            rows.append(restore)
+        if saved:
+            body += (f" Already saved since connecting: {', '.join(map(str, saved))}. Turn the amp off and on "
+                     "before saving one of those again; the amp's firmware hangs otherwise.")
+        dialog = Adw.AlertDialog(heading=heading, body=body, extra_child=rows)
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("save", "Replace memory")
         dialog.set_response_appearance("save", Adw.ResponseAppearance.DESTRUCTIVE)
@@ -350,14 +369,26 @@ class THRWindow(Adw.ApplicationWindow):
         dialog.set_close_response("cancel")
 
         def respond(_dialog, response):
-            if response == "save":
-                index = slot.get_selected()
-                self.log.info("Saving current tone to memory %d as %r", index + 1, name.get_text())
-                self._status("busy", f"Saving to memory {index + 1}...")
-                self.worker.submit("store_memory", index, name.get_text().strip())
+            if response != "save":
+                return
+            index = slot.get_selected()
+            if index in self.worker.saved_memories:
+                self._on_error(f"Memory {index + 1} was already saved. Turn the amp off and on before saving it again.")
+                return
+            on_save(index, name.get_text().strip(), restore.get_active() if restore else False)
 
         dialog.connect("response", respond)
-        dialog.present(self)
+        dialog.present(parent or self)
+
+    def store_preset(self, preset: dict, name: str, index: int, restore: bool) -> None:
+        hold = {}
+        if self.prefs.get("preset_keep_master", True):
+            hold[("Amp", "Master")] = self.amp_knobs["Master"].value / 100.0
+        if self.prefs.get("preset_keep_gain", False):
+            hold[("Amp", "Drive")] = self.amp_knobs["Drive"].value / 100.0
+        self.log.info("Saving preset %r to memory %d", name, index + 1)
+        self._status("busy", f"Saving '{name}' to memory {index + 1}...")
+        self.worker.submit("store_preset", preset, name, index, hold, restore)
 
     def _status(self, method: str, *args) -> None:
         getattr(self.apply_status, method)(*args)
@@ -383,8 +414,13 @@ class THRWindow(Adw.ApplicationWindow):
             self._status("update", name, done, total, next_name)
             return
         if kind == "stored":
-            index, ok = args
-            self._status("done", f"Saved to memory {index + 1}" if ok else f"The amp didn't save memory {index + 1}. See Console.")
+            index, ok, message = (args + (None,))[:3]
+            if ok:
+                self._status("done", f"Saved to memory {index + 1}")
+            else:
+                self._status("done", message or f"The amp didn't save memory {index + 1}. See Console.")
+                if message:
+                    self._on_error(message)
             return
         if kind == "failed":
             self._status("fail", args[0])
