@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=THR-II Control
+Comment=Control a Yamaha THR-II amp over USB
+Exec=env PYTHONPATH=@REPO@ python3 -m thr2.gui
+Icon=io.github.averagenative.thr2
+Categories=AudioVideo;Audio;Music;
+Keywords=guitar;amp;yamaha;thr;
+Terminal=false
