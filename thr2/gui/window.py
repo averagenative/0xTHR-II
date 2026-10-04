@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -296,6 +298,9 @@ class THRWindow(Adw.ApplicationWindow):
             hold[("Amp", "Master")] = self.amp_knobs["Master"].value / 100.0
         if self.prefs.get("preset_keep_gain", False):
             hold[("Amp", "Drive")] = self.amp_knobs["Drive"].value / 100.0
+        if self.state is not None:
+            predicted = thrl6p.to_patch(preset, self.state.patch, hold)
+            self._on_state(dataclasses.replace(self.state, patch=predicted))
         self.worker.submit("load_preset", preset, name, self.original_tone is None, hold)
 
     def restore_original(self) -> None:

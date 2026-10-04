@@ -65,59 +65,114 @@ def _number(value) -> float | None:
     return float(value)
 
 
-def plan(preset: dict, hold: dict | None = None) -> list[tuple]:
+MODEL_PARAMS = {
+    "RedComp": ("Sustain", "Level"),
+    "StereoSquareChorus": ("Freq", "Depth", "Pre", "Feedback"),
+    "L6Flanger": ("Freq", "Depth"),
+    "Phaser": ("Speed", "Feedback"),
+    "BiasTremolo": ("Speed", "Depth"),
+    "TapeEcho": ("Time", "Feedback", "Bass", "Treble"),
+    "L6DigitalDelay": ("Time", "Feedback", "Bass", "Treble"),
+    "StandardSpring": ("Time", "Tone"),
+    "LargePlate1": ("Decay", "PreDelay", "Tone"),
+    "ReallyLargeHall": ("Decay", "PreDelay", "Tone"),
+    "SmallRoom1": ("Decay", "PreDelay", "Tone"),
+}
+AMP_PARAMS = ("Drive", "Master", "Bass", "Mid", "Treble")
+SAME = 0.0005
+
+
+def _current(patch: Patch | None, unit: str, param: str):
+    """A setting's value in a patch dump, or None when unknown."""
+    if patch is None:
+        return None
+    found = patch.find(unit)
+    return found.params.get(f"{param}State") if found else None
+
+
+def _differs(old, new: float) -> bool:
+    if isinstance(old, bool):
+        old = 1.0 if old else 0.0
+    if not isinstance(old, (int, float)):
+        return True
+    return abs(float(old) - new) > SAME
+
+
+def plan(preset: dict, hold: dict | None = None, current: Patch | None = None) -> list[tuple]:
     """Turn a preset into an ordered list of amp commands.
 
-    Model switches come first, because selecting a model resets that unit's settings.
-    Each step is ("type", unit, symbol) or ("param", unit, param, value).
+    Each step is ("type", unit, symbol) or ("param", unit, param, value). The order keeps
+    the transition short and quiet: the amp model, then its knobs (selecting a model
+    resets them to 0.5), then the cabinet, then each effect's model and settings, then
+    mixes, switches, and the gate.
 
     ``hold`` maps (unit, param) to a value to keep instead of the preset's, for example
-    {("Amp", "Master"): 0.3} to keep the current volume. Held values are sent last, after
-    the model switches have reset them.
+    {("Amp", "Master"): 0.3}. ``current`` is a dump of the amp's settings; when given,
+    steps that wouldn't change anything are left out. Settings the chosen effect model
+    doesn't use are always left out.
     """
     hold = hold or {}
     tone = validate(preset)["data"]["tone"]
     steps: list[tuple] = []
-    amp = tone.get("THRGroupAmp", {})
-    if amp.get("@asset"):
-        steps.append(("type", "Amp", amp["@asset"]))
-    for group, unit in FX_GROUPS.items():
-        asset = tone.get(group, {}).get("@asset")
-        if asset:
-            steps.append(("type", unit, asset))
 
-    for key, value in amp.items():
-        if not key.startswith("@") and (number := _number(value)) is not None:
-            steps.append(("param", "Amp", key, number))
+    def param(unit: str, name: str, value: float, forced: bool = False) -> None:
+        if forced or current is None or _differs(_current(current, unit, name), value):
+            steps.append(("param", unit, name, value))
+
+    amp = tone.get("THRGroupAmp", {})
+    asset = amp.get("@asset")
+    current_amp = current.find("Amp").type if current is not None and current.find("Amp") else None
+    amp_switched = bool(asset) and asset != current_amp
+    if amp_switched:
+        steps.append(("type", "Amp", asset))
+    for name in AMP_PARAMS:
+        value = hold.get(("Amp", name), _number(amp.get(name)))
+        if value is not None:
+            param("Amp", name, float(value), forced=amp_switched)
+
     cab = _number(tone.get("THRGroupCab", {}).get("SpkSimType"))
     if cab is not None:
-        steps.append(("param", PROC, "SpkSimType", cab))
+        param(PROC, "SpkSimType", cab)
+
     for group, unit in FX_GROUPS.items():
         settings = tone.get(group, {})
-        for key, value in settings.items():
-            if not key.startswith("@") and (number := _number(value)) is not None:
-                steps.append(("param", unit, key, number))
-        if "@wetDry" in settings and (mix := _number(settings["@wetDry"])) is not None:
-            steps.append(("param", PROC, f"{unit}Mix", mix))
+        model = settings.get("@asset")
+        current_model = current.find(unit).type if current is not None and current.find(unit) else None
+        switched = bool(model) and model != current_model
+        if switched:
+            steps.append(("type", unit, model))
+        for name in MODEL_PARAMS.get(model or current_model, ()):
+            value = hold.get((unit, name), _number(settings.get(name)))
+            if value is not None:
+                param(unit, name, float(value), forced=switched)
+
+    for group, unit in FX_GROUPS.items():
+        settings = tone.get(group, {})
+        if (mix := _number(settings.get("@wetDry"))) is not None:
+            param(PROC, f"{unit}Mix", mix)
         if "@enabled" in settings:
-            steps.append(("param", PROC, f"{unit}Enable", 1.0 if settings["@enabled"] else 0.0))
+            param(PROC, f"{unit}Enable", 1.0 if settings["@enabled"] else 0.0)
+
     gate = tone.get("THRGroupGate", {})
-    for key in ("Thresh", "Decay"):
-        if (number := _number(gate.get(key))) is not None:
-            steps.append(("param", PROC, key, number))
+    for name in ("Thresh", "Decay"):
+        if (number := _number(gate.get(name))) is not None:
+            param(PROC, name, number)
     if "@enabled" in gate:
-        steps.append(("param", PROC, "GateEnable", 1.0 if gate["@enabled"] else 0.0))
-    steps = [s for s in steps if s[0] == "type" or (s[1], s[2]) not in hold]
-    steps.extend(("param", unit, param, float(value)) for (unit, param), value in hold.items())
+        param(PROC, "GateEnable", 1.0 if gate["@enabled"] else 0.0)
     return steps
 
 
-def apply(thr, preset: dict, hold: dict | None = None) -> list[str]:
+def apply(thr, preset: dict, hold: dict | None = None, current: Patch | None = None) -> list[str]:
     """Send a preset to the amp. Returns notes about settings the amp skipped."""
     from .client import THRError
 
+    steps = plan(preset, hold, current)
+    try:
+        return thr.batch(steps)
+    except (AttributeError, THRError):
+        pass
     skipped = []
-    for step in plan(preset, hold):
+    for step in steps:
         try:
             if step[0] == "type":
                 ok = thr.set_unit_type(step[1], step[2])
@@ -129,6 +184,38 @@ def apply(thr, preset: dict, hold: dict | None = None) -> list[str]:
         if not ok:
             skipped.append(f"{step[1]} {step[2]}: not accepted")
     return skipped
+
+
+def to_patch(preset: dict, base: Patch, hold: dict | None = None) -> Patch:
+    """Predict the amp's settings after applying a preset, starting from ``base``.
+
+    The app uses this to move its knobs right away, before the amp confirms.
+    """
+    from copy import deepcopy
+
+    patch = deepcopy(base)
+    proc, amp = patch.find(PROC), patch.find("Amp")
+    if proc is None or amp is None:
+        return patch
+    for step in plan(preset, hold):
+        if step[0] == "type":
+            unit = patch.find(step[1])
+            if unit is not None:
+                unit.type = step[2]
+                if step[1] != "Amp":
+                    unit.params = {}
+            continue
+        _, unit_name, name, value = step
+        unit = patch.find(unit_name)
+        if unit is None:
+            continue
+        if name.endswith("Enable"):
+            unit.params[f"{name}State"] = bool(value)
+        elif name == "SpkSimType":
+            unit.params[f"{name}State"] = int(value)
+        else:
+            unit.params[f"{name}State"] = value
+    return patch
 
 
 def from_patch(patch: Patch, name: str, device: int = 0x240002, firmware: int = 0) -> dict:

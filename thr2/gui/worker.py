@@ -53,6 +53,7 @@ class AmpWorker(threading.Thread):
         self._force_bluetooth = False
         self._refresh_requested = False
         self.thr: THR | None = None
+        self.last_patch = None
 
     def stop(self) -> None:
         self._stop.set()
@@ -135,6 +136,7 @@ class AmpWorker(threading.Thread):
     def _refresh(self) -> None:
         thr = self.thr
         state = AmpState(identity=thr.identity, firmware=thr.firmware_text, patch=thr.dump())
+        self.last_patch = state.patch
         for name in ("GuitarVolume", "AudioVolume"):
             state.globals[name] = thr.get_global(name)
         for name in ("guitar_di_mode", "extended_stereo", "user_setting", "user_setting_changed"):
@@ -179,12 +181,29 @@ class AmpWorker(threading.Thread):
 
     def _cmd_load_preset(self, preset: dict, name: str, keep_backup: bool, hold: dict | None = None) -> None:
         backup = None
-        if keep_backup:
-            backup = thrl6p.from_patch(self.thr.dump(), "Tone before presets", firmware=self.thr.firmware)
+        current = self.last_patch
+        if keep_backup or current is None:
+            current = self.thr.dump()
+            if keep_backup:
+                backup = thrl6p.from_patch(current, "Tone before presets", firmware=self.thr.firmware)
         LOG.info("Loading preset %r%s", name, f", keeping {sorted(p for _, p in hold)}" if hold else "")
-        skipped = thrl6p.apply(self.thr, preset, hold)
+        skipped = thrl6p.apply(self.thr, preset, hold, current)
+        if skipped:
+            LOG.debug("Not accepted: %s", skipped)
         self._refresh_requested = True
         GLib.idle_add(self._on_result, "loaded", name, backup, skipped)
+
+    def _track(self, event) -> None:
+        """Keep the cached settings in step with knob changes made on the amp."""
+        unit = self.last_patch.find(event.unit) if self.last_patch is not None else None
+        if unit is None or event.param is None:
+            return
+        value = event.value
+        if event.param.endswith("Enable"):
+            value = bool(value)
+        elif event.param == "SpkSimType" and isinstance(value, float):
+            value = int(value)
+        unit.params[f"{event.param}State"] = value
 
     def _cmd_save_preset(self, path, name: str) -> None:
         preset = thrl6p.from_patch(self.thr.dump(), name, firmware=self.thr.firmware)
@@ -200,4 +219,5 @@ class AmpWorker(threading.Thread):
             if event.opcode == 0x03 or (event.opcode == 0x02 and event.param == "recalled"):
                 self._refresh_requested = True
             elif event.opcode == 0x04:
+                self._track(event)
                 GLib.idle_add(self._on_event, event)

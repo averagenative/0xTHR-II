@@ -291,6 +291,37 @@ class THR:
         body = words(ukey, self.key(param), TYPE_FLOAT, float_word(value))
         return self.command(0, 0x0A, body).ok
 
+    def batch(self, steps: list[tuple], window: int = 6) -> list[str]:
+        """Send several changes, a few at a time, without waiting for each answer.
+
+        Each step is ("type", unit, symbol) or ("param", unit, param, value). Answers come
+        back in order, so after sending up to ``window`` changes the client collects that
+        many answers. Raises THRError if an answer goes missing, so the caller can retry
+        one change at a time. Returns notes about changes the amp didn't accept.
+        """
+        bodies, notes = [], []
+        for step in steps:
+            try:
+                if step[0] == "type":
+                    bodies.append((step, 0x08, words(self.key(step[1]), self.key(step[2]))))
+                else:
+                    ukey = GLOBAL_UNIT if step[1] == "global" else self.key(step[1])
+                    bodies.append((step, 0x0A, words(ukey, self.key(step[2]), TYPE_FLOAT, float_word(step[3]))))
+            except THRError as err:
+                notes.append(f"{step[1]} {step[2]}: {err}")
+        started = time.monotonic()
+        for i in range(0, len(bodies), window):
+            chunk = bodies[i:i + window]
+            for step, opcode, body in chunk:
+                LOG.debug("batch %s", step)
+                self._send(0, words(opcode, len(body)))
+                self._send(0, body)
+            for step, _opcode, _body in chunk:
+                if not self._await_answer(0, timeout=2.0).ok:
+                    notes.append(f"{step[1]} {step[2]}: not accepted")
+        LOG.info("Sent %d changes in %.0f ms", len(bodies), (time.monotonic() - started) * 1000)
+        return notes
+
     def set_unit_type(self, unit: str, type_name: str) -> bool:
         """Switch a unit's model, for example the Amp unit to THR10X_Brown1."""
         return self.command(0, 0x08, words(self.key(unit), self.key(type_name))).ok

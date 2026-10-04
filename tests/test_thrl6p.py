@@ -47,11 +47,14 @@ class FakeTHR:
 
 
 class PlanTest(unittest.TestCase):
-    def test_model_switches_come_first(self):
+    def test_amp_model_then_amp_knobs_first(self):
         steps = thrl6p.plan(SAMPLE)
-        kinds = [s[0] for s in steps]
-        self.assertEqual(kinds[:5], ["type"] * 5)
-        self.assertNotIn("type", kinds[5:])
+        self.assertEqual(steps[0], ("type", "Amp", "THR10C_DC30"))
+        self.assertEqual({s[2] for s in steps[1:6]}, {"Drive", "Master", "Bass", "Mid", "Treble"})
+        for unit in ("FX1", "FX2", "FX3", "FX4"):
+            switch = next(i for i, s in enumerate(steps) if s[:2] == ("type", unit))
+            params = [i for i, s in enumerate(steps) if s[0] == "param" and s[1] == unit]
+            self.assertTrue(all(i > switch for i in params), unit)
 
     def test_maps_every_group(self):
         thr = FakeTHR()
@@ -71,12 +74,37 @@ class PlanTest(unittest.TestCase):
         ]:
             self.assertIn(expected, calls)
 
-    def test_hold_keeps_master_after_model_switch(self):
+    def test_hold_keeps_master_right_after_model_switch(self):
         steps = thrl6p.plan(SAMPLE, hold={("Amp", "Master"): 0.2})
         self.assertNotIn(("param", "Amp", "Master", 0.4), steps)
-        self.assertEqual(steps[-1], ("param", "Amp", "Master", 0.2))
-        self.assertLess(steps.index(("type", "Amp", "THR10C_DC30")), steps.index(steps[-1]))
+        self.assertIn(("param", "Amp", "Master", 0.2), steps[1:6])
         self.assertIn(("param", "Amp", "Drive", 0.55), steps)
+
+    def test_skips_settings_the_model_does_not_use(self):
+        preset = json.loads(json.dumps(SAMPLE))
+        preset["data"]["tone"]["THRGroupFX4EffectReverb"]["Decay"] = 0.9
+        steps = thrl6p.plan(preset)
+        self.assertNotIn("Decay", [s[2] for s in steps if s[1] == "FX4"])
+
+    def test_skips_unchanged_settings(self):
+        proc = Unit("GuitarProc", "Y2GuitarFlow", {
+            "FX1EnableState": False, "FX2EnableState": True, "FX3EnableState": False, "FX4EnableState": True,
+            "FX2MixState": 0.25, "FX3MixState": 0.2, "FX4MixState": 0.3, "GateEnableState": True,
+            "ThreshState": -48.0, "DecayState": 0.2, "SpkSimTypeState": 8,
+        })
+        proc.units = {
+            "FX1": Unit("FX1", "RedComp", {"LevelState": 0.8, "SustainState": 0.3}),
+            "Amp": Unit("Amp", "THR10C_DC30", {"BassState": 0.6, "DriveState": 0.55, "MasterState": 0.4,
+                                               "MidState": 0.5, "TrebleState": 0.7}),
+            "FX2": Unit("FX2", "L6Flanger", {"DepthState": 0.4, "FreqState": 0.2}),
+            "FX3": Unit("FX3", "TapeEcho", {"TimeState": 0.35}),
+            "FX4": Unit("FX4", "StandardSpring", {"TimeState": 0.5, "ToneState": 0.6}),
+        }
+        current = Patch(meta={}, units={"GuitarProc": proc})
+        self.assertEqual(thrl6p.plan(SAMPLE, current=current), [])
+        proc.units["Amp"].params["MasterState"] = 0.9
+        self.assertEqual(thrl6p.plan(SAMPLE, current=current), [("param", "Amp", "Master", 0.4)])
+        self.assertEqual(thrl6p.plan(SAMPLE, hold={("Amp", "Master"): 0.9}, current=current), [])
 
     def test_rejects_non_presets(self):
         with self.assertRaises(thrl6p.PresetError):
