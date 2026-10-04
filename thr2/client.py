@@ -357,14 +357,29 @@ class THR:
             LOG.warning("The amp rejected the save to memory %d", index + 1)
             return False
         self._wait_for_store_report(index)
+        return self._confirm_store(index, dump)
+
+    def _confirm_store(self, index: int, dump: bytes, timeout: float = 20.0) -> bool:
+        """Wait until the memory reads back with the saved name.
+
+        The amp acknowledges a save before it finishes writing, sometimes by several
+        seconds, and a second save sent during that time hung the amp until it was
+        power-cycled. So nothing else goes to the amp until the new name reads back.
+        """
         from .patch import dump_name
+
         expected = dump_name(dump)
-        stored = self.patch_name(index)
-        if expected and stored != expected:
-            LOG.warning("Memory %d reads %r after saving %r; the amp didn't store it", index + 1, stored, expected)
-            return False
-        LOG.info("Memory %d now holds %r", index + 1, stored)
-        return True
+        started = time.monotonic()
+        while True:
+            stored = self.patch_name(index)
+            if not expected or stored == expected:
+                LOG.info("Memory %d now holds %r (confirmed after %.1f s)", index + 1, stored,
+                         time.monotonic() - started)
+                return True
+            if time.monotonic() - started > timeout:
+                LOG.warning("Memory %d still reads %r %.0f s after saving %r", index + 1, stored, timeout, expected)
+                return False
+            time.sleep(1.0)
 
     def _wait_for_store_report(self, index: int, timeout: float = 3.0) -> None:
         """The amp reports a stored memory with opcode 0x02; let it finish writing before moving on."""
