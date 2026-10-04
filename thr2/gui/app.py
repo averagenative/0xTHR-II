@@ -62,10 +62,6 @@ class THRApplication(Adw.Application):
     def _capture(self, window):
         def shoot():
             save_png(window, self.screenshot)
-            scrolled = window.page.get_first_child()
-            content = scrolled.get_child().get_child() if scrolled else None
-            if content:
-                save_png(window, self.screenshot.replace(".png", "-page.png"), content)
             window.close()
             return GLib.SOURCE_REMOVE
         GLib.timeout_add(1200, shoot)

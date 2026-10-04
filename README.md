@@ -15,11 +15,20 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 
 Run `make install` once to add **THR-II Control** to your GNOME app grid, or start it from this directory with `make gui`.
 
-The window mirrors the amp: turn a knob on the amp and the matching slider moves.
+Everything fits on one screen, laid out like the amp's front panel:
 
-The **Levels** section at the top shows what your computer records over USB, with a peak readout and a **Clipped** warning that stays lit until you click it. With headphones plugged into the amp, the GUITAR knob (**Guitar volume**) only changes what you hear, so you can set the recording level with **Master** and then turn **Guitar volume** down to a comfortable level. The meter reads the amp's PipeWire capture alongside REAPER, so it doesn't interrupt a recording. It covers the amp model (category plus Modern, Boutique, or Classic character), cabinet, gain and tone, the four effects with their models and settings, the noise gate, the guitar and playback volumes, Extended Stereo, and the USB recording output (**Amp** or **Dry**) in the header bar. It reconnects by itself when you unplug or power-cycle the amp.
+- **Top:** the amp (model category plus Modern, Boutique, or Classic character, cabinet, and the five main knobs) and the recording level panel.
+- **Middle:** the compressor, effect (chorus, flanger, phaser, or tremolo), echo, and reverb, each with an on/off switch, a model picker, Mix, and that model's settings.
+- **Bottom:** the noise gate and the five user memories.
+- **Header bar:** **Knob step** and the USB recording output (**Amp** or **Dry**).
 
-Changing the amp model on a THR-II resets gain, master, and the tone controls to 50, which can be a sudden jump in volume. The app keeps your knob settings across amp changes unless you turn off **Keep knob settings when changing amps**. Changing an effect's model loads that model's default settings.
+The window mirrors the amp: turn a knob on the amp and the matching knob in the app moves. It reconnects by itself when you unplug or power-cycle the amp.
+
+Each knob responds to dragging, the scroll wheel, and the arrow keys. **Knob step** sets how far one scroll notch or arrow-key press moves a knob: 1, 2, 5, or 10 (in dB for the gate threshold). Hold Shift to move by 1 without changing the setting. Page Up and Page Down move ten steps. The app remembers the step in `~/.config/thr2/settings.json`.
+
+The **Recording level** panel shows what your computer records over USB, with a peak readout and a **Clipped** warning that stays lit until you click it. With headphones plugged into the amp, the **Guitar** knob (the amp's GUITAR knob) only changes what you hear, so you can set the recording level with **Master** and then turn **Guitar** down to a comfortable level. The meter reads the amp's PipeWire capture alongside REAPER, so it doesn't interrupt a recording.
+
+Changing the amp model on a THR-II resets gain, master, and the tone controls to 50, which can be a sudden jump in volume. The app keeps your knob settings across amp changes unless you clear **Keep knobs when changing amps**. Changing an effect's model loads that model's default settings.
 
 Loading a user memory from the app isn't verified yet. It replaces the current settings, so test it on a tone you don't mind losing.
 
@@ -70,8 +79,10 @@ The amp's GUITAR knob doesn't affect the USB level, and turning on the tuner mut
 | `thr2/client.py` | Unlock, symbol table, queries, parameter changes, and change events |
 | `thr2/patch.py` | Parser for patch dumps (the current tone or a stored user memory) |
 | `thr2/cli.py` | The `thr2` command |
-| `thr2/gui/worker.py` | Background thread that owns the connection, coalesces slider moves, and forwards the amp's change reports |
+| `thr2/gui/worker.py` | Background thread that owns the connection, coalesces knob moves, and forwards the amp's change reports |
 | `thr2/gui/window.py` | The libadwaita window |
+| `thr2/gui/knob.py` | Rotary knob control with drag, scroll, and keyboard input and a shared step setting |
+| `thr2/gui/settings.py` | Per-user preferences |
 | `thr2/gui/meter.py` | USB recording level meter: `pipewiresrc ! level`, pinned to the amp's capture node with fallback disabled |
 
 The amp ignores commands until a client unlocks its MIDI interface with a firmware-specific key. After that, every unit, parameter, and amp model is a number that indexes the amp's own symbol table. Those numbers change between firmware versions, so the client downloads the table on first connect and caches it in `~/.cache/thr2/`. See `docs/protocol.md` for the details.

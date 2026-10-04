@@ -1,4 +1,4 @@
-"""Main window: amp, effects, gate, output, and user memories, kept in sync with the amp."""
+"""Main window: one screen laid out like the amp's front panel, kept in sync with the amp."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
 
 from ..client import AMP_NAMES, CABINETS  # noqa: E402
+from . import settings  # noqa: E402
+from .knob import Knob, StepSetting  # noqa: E402
 from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
 
@@ -16,6 +18,7 @@ MODELS = {0: "THR10II", 1: "THR10II Wireless", 2: "THR30II Wireless", 3: "THR30I
 CATEGORIES = ["Clean", "Crunch", "Lead", "Hi Gain", "Special", "Bass", "Acoustic", "Flat"]
 CHARACTERS = ["Modern", "Boutique", "Classic"]
 AMP_GRID = {tuple(v.split(" / ")): k for k, v in AMP_NAMES.items()}
+STEPS = ["1", "2", "5", "10"]
 
 SLOTS = [
     ("FX1", "Compressor", "Evens out picking dynamics"),
@@ -39,78 +42,79 @@ AMP_KNOBS = [("Drive", "Gain"), ("Master", "Master"), ("Bass", "Bass"), ("Mid", 
              ("Treble", "Treble")]
 
 
-class SliderRow(Adw.ActionRow):
-    """A row with a horizontal slider. Values on the wire are 0.0 to 1.0 unless ``raw``."""
+def card(title: str, *suffixes: Gtk.Widget, tooltip: str | None = None) -> tuple[Gtk.Box, Gtk.Box]:
+    """A rounded panel with a heading row. Returns (outer, body)."""
+    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    outer.add_css_class("card")
+    body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
+                   margin_top=10, margin_bottom=12, margin_start=14, margin_end=14)
+    header = Gtk.Box(spacing=8)
+    label = Gtk.Label(label=title, xalign=0, hexpand=True)
+    label.add_css_class("heading")
+    if tooltip:
+        label.set_tooltip_text(tooltip)
+    header.append(label)
+    for widget in suffixes:
+        widget.set_valign(Gtk.Align.CENTER)
+        header.append(widget)
+    body.append(header)
+    outer.append(body)
+    return outer, body
 
-    def __init__(self, title: str, on_change, lower=0.0, upper=100.0, raw=False, unit=""):
-        super().__init__(title=title)
-        self._on_change = on_change
-        self._raw = raw
-        self._syncing = False
-        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lower, upper, 1)
-        self.scale.set_hexpand(False)
-        self.scale.set_size_request(320, -1)
-        self.scale.set_valign(Gtk.Align.CENTER)
-        self.scale.set_draw_value(True)
-        self.scale.set_value_pos(Gtk.PositionType.RIGHT)
-        self.scale.set_format_value_func(lambda _s, v: f"{v:.0f}{unit}")
-        self.scale.add_css_class("thr-slider")
-        self.scale.update_property([Gtk.AccessibleProperty.LABEL], [title])
-        self.scale.connect("value-changed", self._changed)
-        self.add_suffix(self.scale)
 
-    def _changed(self, scale) -> None:
-        if not self._syncing:
-            value = scale.get_value()
-            self._on_change(value if self._raw else value / 100.0)
-
-    def set_wire_value(self, value) -> None:
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            return
-        self._syncing = True
-        self.scale.set_value(value if self._raw else value * 100.0)
-        self._syncing = False
+def knob_row() -> Gtk.Box:
+    return Gtk.Box(spacing=6, halign=Gtk.Align.CENTER, homogeneous=True)
 
 
 class EffectSlot:
-    """One effect unit: an expander with an on/off switch, a model picker, mix, and settings."""
+    """One effect unit: on/off switch, model picker, mix, and the model's own settings."""
 
     def __init__(self, window: THRWindow, unit: str, title: str, hint: str):
         self.window = window
         self.unit = unit
         self.types = EFFECT_TYPES[unit]
         self.current_type = None
-        self.param_rows: list[SliderRow] = []
+        self.param_knobs: list[Knob] = []
         self._syncing = False
 
-        self.row = Adw.ExpanderRow(title=title, subtitle=hint, show_enable_switch=True)
-        self.row.connect("notify::enable-expansion", self._enable_changed)
-
-        self.type_row = None
+        self.switch = Gtk.Switch()
+        self.switch.update_property([Gtk.AccessibleProperty.LABEL], [f"{title} on or off"])
+        self.switch.connect("notify::active", self._enable_changed)
+        suffixes = [self.switch]
+        self.dropdown = None
         if len(self.types) > 1:
-            self.type_row = Adw.ComboRow(title="Model", model=Gtk.StringList.new([t[1] for t in self.types]))
-            self.type_row.connect("notify::selected", self._type_changed)
-            self.row.add_row(self.type_row)
+            self.dropdown = Gtk.DropDown.new_from_strings([t[1] for t in self.types])
+            self.dropdown.update_property([Gtk.AccessibleProperty.LABEL], [f"{title} model"])
+            self.dropdown.connect("notify::selected", self._type_changed)
+            suffixes.insert(0, self.dropdown)
+        self.widget, body = card(title, *suffixes, tooltip=hint)
+        self.widget.set_hexpand(True)
 
-        self.mix_row = SliderRow("Mix", lambda v: window.worker.set_param("GuitarProc", f"{unit}Mix", v))
-        self.row.add_row(self.mix_row)
-        window.bind(("GuitarProc", f"{unit}Mix"), self.mix_row.set_wire_value)
+        self.knobs = knob_row()
+        self.mix = Knob("Mix", lambda v: window.worker.set_param("GuitarProc", f"{unit}Mix", v), window.steps)
+        self.knobs.append(self.mix)
+        body.append(self.knobs)
+        window.bind(("GuitarProc", f"{unit}Mix"), self.mix.set_wire_value)
         window.bind(("GuitarProc", f"{unit}Enable"), self.set_enabled)
 
-    def _enable_changed(self, row, _pspec) -> None:
+    def _enable_changed(self, switch, _pspec) -> None:
+        self._show_enabled(switch.get_active())
         if not self._syncing:
-            self.window.worker.set_param("GuitarProc", f"{self.unit}Enable", 1.0 if row.get_enable_expansion() else 0.0)
+            self.window.worker.set_param("GuitarProc", f"{self.unit}Enable", 1.0 if switch.get_active() else 0.0)
 
-    def _type_changed(self, row, _pspec) -> None:
+    def _show_enabled(self, enabled: bool) -> None:
+        self.knobs.set_opacity(1.0 if enabled else 0.45)
+
+    def _type_changed(self, dropdown, _pspec) -> None:
         if self._syncing:
             return
-        symbol = self.types[row.get_selected()][0]
+        symbol = self.types[dropdown.get_selected()][0]
         if symbol != self.current_type:
             self.window.worker.submit("unit_type", self.unit, symbol, False)
 
     def set_enabled(self, value) -> None:
         self._syncing = True
-        self.row.set_enable_expansion(bool(value))
+        self.switch.set_active(bool(value))
         self._syncing = False
 
     def apply(self, patch) -> None:
@@ -118,43 +122,44 @@ class EffectSlot:
         unit = patch.find(self.unit)
         self._syncing = True
         if proc:
-            self.row.set_enable_expansion(bool(proc.params.get(f"{self.unit}EnableState")))
-            self.mix_row.set_wire_value(proc.params.get(f"{self.unit}MixState"))
+            self.switch.set_active(bool(proc.params.get(f"{self.unit}EnableState")))
+            self._show_enabled(self.switch.get_active())
+            self.mix.set_wire_value(proc.params.get(f"{self.unit}MixState"))
         if unit and unit.type != self.current_type:
             self._rebuild_params(unit)
         elif unit:
-            for row in self.param_rows:
-                row.set_wire_value(unit.params.get(f"{row.param}State"))
-        if unit and self.type_row:
+            for knob in self.param_knobs:
+                knob.set_wire_value(unit.params.get(f"{knob.param}State"))
+        if unit and self.dropdown:
             names = [t[0] for t in self.types]
             if unit.type in names:
-                self.type_row.set_selected(names.index(unit.type))
+                self.dropdown.set_selected(names.index(unit.type))
         self._syncing = False
 
     def _rebuild_params(self, unit) -> None:
-        for row in self.param_rows:
-            self.row.remove(row)
-            self.window.bindings.pop((self.unit, row.param), None)
-        self.param_rows = []
+        for knob in self.param_knobs:
+            self.knobs.remove(knob)
+            self.window.bindings.pop((self.unit, knob.param), None)
+        self.param_knobs = []
         self.current_type = unit.type
         for key, value in unit.params.items():
             param = key.removesuffix("State")
             if param in HIDDEN_PARAMS or not isinstance(value, float):
                 continue
-            row = SliderRow(PARAM_LABELS.get(param, param),
-                            lambda v, p=param: self.window.worker.set_param(self.unit, p, v))
-            row.param = param
-            row.set_wire_value(value)
-            self.row.add_row(row)
-            self.param_rows.append(row)
-            self.window.bind((self.unit, param), row.set_wire_value)
-        if len(self.types) > 1:
-            self.row.set_subtitle(dict(self.types).get(unit.type, unit.type))
+            knob = Knob(PARAM_LABELS.get(param, param),
+                        lambda v, p=param: self.window.worker.set_param(self.unit, p, v), self.window.steps)
+            knob.param = param
+            knob.set_wire_value(value)
+            self.knobs.append(knob)
+            self.param_knobs.append(knob)
+            self.window.bind((self.unit, param), knob.set_wire_value)
 
 
 class THRWindow(Adw.ApplicationWindow):
     def __init__(self, app, on_first_state=None):
-        super().__init__(application=app, title="THR-II", default_width=720, default_height=900)
+        super().__init__(application=app, title="THR-II", default_width=1320, default_height=700)
+        self.prefs = settings.load()
+        self.steps = StepSetting(float(self.prefs.get("knob_step", 2)))
         self.bindings: dict = {}
         self._syncing = False
         self._built = False
@@ -173,7 +178,7 @@ class THRWindow(Adw.ApplicationWindow):
         usb_box = Gtk.Box(spacing=6)
         usb_label = Gtk.Label(label="USB")
         usb_label.add_css_class("dim-label")
-        self.usb_toggle = Adw.ToggleGroup()
+        self.usb_toggle = Adw.ToggleGroup(tooltip_text="What the computer records over USB")
         self.usb_toggle.add(Adw.Toggle(name="amp", label="Amp", tooltip="Record the amp's processed sound over USB"))
         self.usb_toggle.add(Adw.Toggle(name="dry", label="Dry", tooltip="Record the dry guitar signal over USB"))
         self.usb_toggle.connect("notify::active-name", self._usb_changed)
@@ -181,6 +186,20 @@ class THRWindow(Adw.ApplicationWindow):
         usb_box.append(usb_label)
         usb_box.append(self.usb_toggle)
         header.pack_end(usb_box)
+
+        step_box = Gtk.Box(spacing=6)
+        step_label = Gtk.Label(label="Knob step")
+        step_label.add_css_class("dim-label")
+        self.step_toggle = Adw.ToggleGroup(
+            tooltip_text="How far one scroll notch or arrow key moves a knob. Hold Shift to move by 1.")
+        for value in STEPS:
+            self.step_toggle.add(Adw.Toggle(name=value, label=value))
+        current = str(int(self.steps.step))
+        self.step_toggle.set_active_name(current if current in STEPS else "2")
+        self.step_toggle.connect("notify::active-name", self._step_changed)
+        step_box.append(step_label)
+        step_box.append(self.step_toggle)
+        header.pack_start(step_box)
         view.add_top_bar(header)
 
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
@@ -190,8 +209,12 @@ class THRWindow(Adw.ApplicationWindow):
             description="Turn the amp on and connect it with a USB cable. This window finds it automatically.",
         )
         self.stack.add_named(self.waiting, "waiting")
-        self.page = Adw.PreferencesPage()
-        self.stack.add_named(self.page, "amp")
+        self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
+                                           vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
+        self.panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, valign=Gtk.Align.START,
+                             margin_top=14, margin_bottom=16, margin_start=16, margin_end=16)
+        self.scroller.set_child(self.panel)
+        self.stack.add_named(self.scroller, "amp")
         view.set_content(self.stack)
         self.toasts.set_child(view)
         self.set_content(self.toasts)
@@ -200,52 +223,168 @@ class THRWindow(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close)
         self.worker.start()
 
+    def bind(self, key, update) -> None:
+        self.bindings.setdefault(key, []).append(update)
+
     def _on_close(self, *_args):
         self._stop_meter()
         self.worker.stop()
         return False
 
-    def bind(self, key, update) -> None:
-        self.bindings.setdefault(key, []).append(update)
+    def _step_changed(self, group, _pspec) -> None:
+        name = group.get_active_name()
+        if name:
+            self.steps.step = float(name)
+            self.prefs["knob_step"] = int(name)
+            settings.save(self.prefs)
 
-    def _build_levels(self) -> None:
-        levels = Adw.PreferencesGroup(
-            title="Levels",
-            description="The meter shows what REAPER and other recorders receive over USB. "
-                        "Aim for peaks between -12 and -6 dB.",
-        )
-        meter_row = Adw.PreferencesRow(activatable=False, title="USB recording level")
-        box = Gtk.Box(spacing=12, margin_top=10, margin_bottom=8, margin_start=12, margin_end=12)
-        self.meter = LevelMeter()
-        box.append(self.meter)
-        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER)
-        self.peak_label = Gtk.Label(label="Peak --", xalign=1, width_chars=12)
-        self.peak_label.add_css_class("numeric")
-        self.peak_label.add_css_class("caption")
-        self.clip_button = Gtk.Button(label="Clipped", visible=False, tooltip_text="The recording hit full scale. Click to reset.")
+    def _build(self) -> None:
+        top = Gtk.Box(spacing=14)
+        top.append(self._build_amp())
+        top.append(self._build_levels())
+        self.panel.append(top)
+
+        effects = Gtk.Box(spacing=14)
+        self.slots = [EffectSlot(self, *slot) for slot in SLOTS]
+        for slot in self.slots:
+            effects.append(slot.widget)
+        self.panel.append(effects)
+
+        bottom = Gtk.Box(spacing=14)
+        bottom.append(self._build_gate())
+        bottom.append(self._build_memories())
+        self.panel.append(bottom)
+        self._built = True
+
+    def _build_amp(self) -> Gtk.Widget:
+        self.category = Gtk.DropDown.new_from_strings(CATEGORIES)
+        self.category.update_property([Gtk.AccessibleProperty.LABEL], ["Amp type"])
+        self.category.connect("notify::selected", self._amp_changed)
+        self.character = Adw.ToggleGroup()
+        for name in CHARACTERS:
+            self.character.add(Adw.Toggle(name=name, label=name))
+        self.character.connect("notify::active-name", self._amp_changed)
+        outer, body = card("Amp", self.category, self.character)
+        outer.set_hexpand(True)
+
+        line = Gtk.Box(spacing=8)
+        cab_label = Gtk.Label(label="Cabinet")
+        cab_label.add_css_class("dim-label")
+        self.cab = Gtk.DropDown.new_from_strings(CABINETS)
+        self.cab.update_property([Gtk.AccessibleProperty.LABEL], ["Cabinet"])
+        self.cab.connect("notify::selected", self._cab_changed)
+        self.keep_knobs = Gtk.CheckButton(
+            label="Keep knobs when changing amps", active=bool(self.prefs.get("keep_knobs", True)),
+            tooltip_text="Otherwise the amp resets gain, master, and tone to 50 when you pick a new amp",
+            hexpand=True, halign=Gtk.Align.END)
+        self.keep_knobs.connect("toggled", self._keep_changed)
+        line.append(cab_label)
+        line.append(self.cab)
+        line.append(self.keep_knobs)
+        body.append(line)
+        self.bind(("GuitarProc", "SpkSimType"), self._set_cab)
+
+        knobs = knob_row()
+        self.amp_knobs = {}
+        for param, label in AMP_KNOBS:
+            tooltip = "Also sets the recording level" if param == "Master" else None
+            knob = Knob(label, lambda v, p=param: self.worker.set_param("Amp", p, v), self.steps, tooltip=tooltip,
+                        size=64)
+            knobs.append(knob)
+            self.amp_knobs[param] = knob
+            self.bind(("Amp", param), knob.set_wire_value)
+        body.append(knobs)
+        return outer
+
+    def _build_levels(self) -> Gtk.Widget:
+        self.clip_button = Gtk.Button(label="Clipped", visible=False,
+                                      tooltip_text="The recording hit full scale. Click to reset.")
         self.clip_button.add_css_class("destructive-action")
         self.clip_button.add_css_class("pill")
         self.clip_button.connect("clicked", lambda b: b.set_visible(False))
-        side.append(self.peak_label)
-        side.append(self.clip_button)
-        box.append(side)
-        meter_row.set_child(box)
-        levels.add(meter_row)
+        self.peak_label = Gtk.Label(label="Peak --", xalign=1, width_chars=13)
+        self.peak_label.add_css_class("numeric")
+        self.peak_label.add_css_class("dim-label")
+        outer, body = card("Recording level", self.clip_button, self.peak_label,
+                           tooltip="What the computer records over USB. Aim for peaks between -12 and -6 dB.")
+        outer.set_size_request(440, -1)
+        self.meter = LevelMeter()
+        body.append(self.meter)
+        hint = Gtk.Label(label="Set the recording with Master. Guitar only changes what you hear.",
+                         xalign=0, wrap=True)
+        hint.add_css_class("caption")
+        hint.add_css_class("dim-label")
+        body.append(hint)
 
-        def master_changed(value):
-            self.worker.set_param("Amp", "Master", value)
-            for row in self.master_rows:
-                row.set_wire_value(value)
-
-        self.levels_master = SliderRow("Master", master_changed)
-        self.levels_master.set_subtitle("Raises the recording level")
-        self.master_changed = master_changed
-        levels.add(self.levels_master)
-        self.guitar_vol = SliderRow("Guitar volume", lambda v: self.worker.set_param("global", "GuitarVolume", v))
-        self.guitar_vol.set_subtitle("Headphones and speakers only")
-        levels.add(self.guitar_vol)
+        row = Gtk.Box(spacing=12)
+        knobs = knob_row()
+        self.guitar_vol = Knob("Guitar", lambda v: self.worker.set_param("global", "GuitarVolume", v), self.steps,
+                               tooltip="Guitar level in the headphones and speakers. Doesn't change the recording.")
+        self.audio_vol = Knob("Computer", lambda v: self.worker.set_param("global", "AudioVolume", v), self.steps,
+                              tooltip="Level of computer and Bluetooth playback through the amp")
+        knobs.append(self.guitar_vol)
+        knobs.append(self.audio_vol)
         self.bind(("global", "GuitarVolume"), self.guitar_vol.set_wire_value)
-        self.page.add(levels)
+        self.bind(("global", "AudioVolume"), self.audio_vol.set_wire_value)
+        row.append(knobs)
+        stereo = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER, hexpand=True,
+                         halign=Gtk.Align.END)
+        self.stereo_switch = Gtk.Switch(halign=Gtk.Align.CENTER,
+                                        tooltip_text="Widens the reverb and computer or Bluetooth playback")
+        self.stereo_switch.update_property([Gtk.AccessibleProperty.LABEL], ["Extended stereo"])
+        self.stereo_switch.connect("notify::active", self._stereo_changed)
+        stereo_label = Gtk.Label(label="Extended stereo")
+        stereo_label.add_css_class("caption")
+        stereo.append(self.stereo_switch)
+        stereo.append(stereo_label)
+        row.append(stereo)
+        body.append(row)
+        return outer
+
+    def _build_gate(self) -> Gtk.Widget:
+        self.gate_switch = Gtk.Switch()
+        self.gate_switch.update_property([Gtk.AccessibleProperty.LABEL], ["Noise gate on or off"])
+        self.gate_switch.connect("notify::active", self._gate_changed)
+        outer, body = card("Noise gate", self.gate_switch,
+                           tooltip="A high threshold can cut off the ends of notes and sound choppy")
+        outer.set_size_request(260, -1)
+        self.bind(("GuitarProc", "GateEnable"), self._set_gate)
+        knobs = knob_row()
+        self.thresh = Knob("Threshold", lambda v: self.worker.set_param("GuitarProc", "Thresh", v), self.steps,
+                           lower=-96, upper=0, raw=True)
+        self.release = Knob("Release", lambda v: self.worker.set_param("GuitarProc", "Decay", v), self.steps)
+        knobs.append(self.thresh)
+        knobs.append(self.release)
+        self.bind(("GuitarProc", "Thresh"), self.thresh.set_wire_value)
+        self.bind(("GuitarProc", "Decay"), self.release.set_wire_value)
+        body.append(knobs)
+        return outer
+
+    def _build_memories(self) -> Gtk.Widget:
+        outer, body = card("User memories", tooltip="Loading a memory replaces your current settings")
+        outer.set_hexpand(True)
+        row = Gtk.Box(spacing=8, homogeneous=True, vexpand=True, valign=Gtk.Align.CENTER)
+        hint = Gtk.Label(label="Loading a memory replaces your current settings.", xalign=0)
+        hint.add_css_class("caption")
+        hint.add_css_class("dim-label")
+        body.append(hint)
+        self.memory_buttons = []
+        for i in range(5):
+            button = Gtk.Button(tooltip_text="Load this memory. It replaces your current settings.")
+            content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=6, margin_bottom=6)
+            number = Gtk.Label(label=str(i + 1))
+            number.add_css_class("title-3")
+            name = Gtk.Label(label=f"Memory {i + 1}", ellipsize=Pango.EllipsizeMode.END, max_width_chars=16)
+            name.add_css_class("caption")
+            content.append(number)
+            content.append(name)
+            button.set_child(content)
+            button.name_label = name
+            button.connect("clicked", lambda _b, n=i: self.worker.submit("recall", n))
+            row.append(button)
+            self.memory_buttons.append(button)
+        body.append(row)
+        return outer
 
     def _start_meter_polling(self) -> None:
         if not self._meter_timer:
@@ -277,107 +416,15 @@ class THRWindow(Adw.ApplicationWindow):
     def _stop_meter(self) -> None:
         if self.monitor:
             self.monitor.stop()
-        self._on_meter_stopped()
-
-    def _build(self) -> None:
-        self._build_levels()
-        amp = Adw.PreferencesGroup(title="Amp")
-        self.category_row = Adw.ComboRow(title="Amp", model=Gtk.StringList.new(CATEGORIES))
-        self.category_row.connect("notify::selected", self._amp_changed)
-        amp.add(self.category_row)
-
-        self.character_row = Adw.ActionRow(title="Character")
-        self.character = Adw.ToggleGroup(valign=Gtk.Align.CENTER)
-        for name in CHARACTERS:
-            self.character.add(Adw.Toggle(name=name, label=name))
-        self.character.connect("notify::active-name", self._amp_changed)
-        self.character_row.add_suffix(self.character)
-        amp.add(self.character_row)
-
-        self.keep_knobs = Adw.SwitchRow(
-            title="Keep knob settings when changing amps",
-            subtitle="Otherwise the amp resets gain, master, and tone to 50",
-            active=True,
-        )
-        amp.add(self.keep_knobs)
-
-        self.cab_row = Adw.ComboRow(title="Cabinet", model=Gtk.StringList.new(CABINETS))
-        self.cab_row.connect("notify::selected", self._cab_changed)
-        amp.add(self.cab_row)
-        self.bind(("GuitarProc", "SpkSimType"), self._set_cab)
-
-        self.amp_rows = {}
-        for param, label in AMP_KNOBS:
-            if param == "Master":
-                row = SliderRow(label, self.master_changed)
-            else:
-                row = SliderRow(label, lambda v, p=param: self.worker.set_param("Amp", p, v))
-            amp.add(row)
-            self.amp_rows[param] = row
-            self.bind(("Amp", param), row.set_wire_value)
-        self.master_rows = [self.amp_rows["Master"], self.levels_master]
-        self.bind(("Amp", "Master"), self.levels_master.set_wire_value)
-        self.page.add(amp)
-
-        effects = Adw.PreferencesGroup(
-            title="Effects",
-            description="Switch an effect off here or by turning its knob on the amp fully counterclockwise.",
-        )
-        self.slots = [EffectSlot(self, *slot) for slot in SLOTS]
-        for slot in self.slots:
-            effects.add(slot.row)
-        self.page.add(effects)
-
-        gate = Adw.PreferencesGroup(
-            title="Noise gate",
-            description="A high threshold can cut off the ends of notes and sound choppy.",
-        )
-        self.gate_row = Adw.SwitchRow(title="Noise gate")
-        self.gate_row.connect("notify::active", self._gate_changed)
-        gate.add(self.gate_row)
-        self.bind(("GuitarProc", "GateEnable"), self._set_gate)
-        self.thresh_row = SliderRow("Threshold", lambda v: self.worker.set_param("GuitarProc", "Thresh", v),
-                                    lower=-96, upper=0, raw=True, unit=" dB")
-        self.decay_row = SliderRow("Release", lambda v: self.worker.set_param("GuitarProc", "Decay", v))
-        gate.add(self.thresh_row)
-        gate.add(self.decay_row)
-        self.bind(("GuitarProc", "Thresh"), self.thresh_row.set_wire_value)
-        self.bind(("GuitarProc", "Decay"), self.decay_row.set_wire_value)
-        self.page.add(gate)
-
-        output = Adw.PreferencesGroup(title="Output")
-        self.audio_vol = SliderRow("Computer and Bluetooth audio",
-                                   lambda v: self.worker.set_param("global", "AudioVolume", v))
-        output.add(self.audio_vol)
-        self.bind(("global", "AudioVolume"), self.audio_vol.set_wire_value)
-        self.stereo_row = Adw.SwitchRow(title="Extended stereo",
-                                        subtitle="Widens the reverb and computer or Bluetooth playback")
-        self.stereo_row.connect("notify::active", self._stereo_changed)
-        output.add(self.stereo_row)
-        self.page.add(output)
-
-        self.memories = Adw.PreferencesGroup(
-            title="User memories",
-            description="Loading a memory replaces your current settings.",
-        )
-        self.memory_rows = []
-        for i in range(5):
-            row = Adw.ActionRow(title=f"Memory {i + 1}")
-            button = Gtk.Button(label="Load", valign=Gtk.Align.CENTER)
-            button.connect("clicked", lambda _b, n=i: self.worker.submit("recall", n))
-            row.add_suffix(button)
-            self.memories.add(row)
-            self.memory_rows.append(row)
-        self.page.add(self.memories)
-        self._built = True
+        if self._built:
+            self._on_meter_stopped()
 
     def _on_status(self, connected: bool, message: str) -> None:
         self._connected = connected
         if connected:
             self.title_widget.set_subtitle("Connecting")
             return
-        if self._built:
-            self._stop_meter()
+        self._stop_meter()
         self.stack.set_visible_child_name("waiting")
         self.usb_toggle.set_sensitive(False)
         self.title_widget.set_title("THR-II")
@@ -403,30 +450,32 @@ class THRWindow(Adw.ApplicationWindow):
         if amp:
             pair = AMP_NAMES.get(amp.type, "").split(" / ")
             if len(pair) == 2:
-                self.category_row.set_selected(CATEGORIES.index(pair[0]))
+                self.category.set_selected(CATEGORIES.index(pair[0]))
                 self.character.set_active_name(pair[1])
-            for param, row in self.amp_rows.items():
-                row.set_wire_value(amp.params.get(f"{param}State"))
-            self.levels_master.set_wire_value(amp.params.get("MasterState"))
+            for param, knob in self.amp_knobs.items():
+                knob.set_wire_value(amp.params.get(f"{param}State"))
         proc = patch.find("GuitarProc")
         if proc:
             self._set_cab(proc.params.get("SpkSimTypeState"))
-            self.gate_row.set_active(bool(proc.params.get("GateEnableState")))
-            self.thresh_row.set_wire_value(proc.params.get("ThreshState"))
-            self.decay_row.set_wire_value(proc.params.get("DecayState"))
+            self.gate_switch.set_active(bool(proc.params.get("GateEnableState")))
+            self.thresh.set_wire_value(proc.params.get("ThreshState"))
+            self.release.set_wire_value(proc.params.get("DecayState"))
         for slot in self.slots:
             slot.apply(patch)
 
         self.guitar_vol.set_wire_value(state.globals.get("GuitarVolume"))
         self.audio_vol.set_wire_value(state.globals.get("AudioVolume"))
-        self.stereo_row.set_active(bool(state.system.get("extended_stereo")))
+        self.stereo_switch.set_active(bool(state.system.get("extended_stereo")))
         self.usb_toggle.set_active_name("dry" if state.system.get("guitar_di_mode") else "amp")
         self.usb_toggle.set_sensitive(True)
 
         active = state.system.get("user_setting")
-        for i, row in enumerate(self.memory_rows):
-            row.set_title(state.memory_names[i] or f"Memory {i + 1}")
-            row.set_subtitle("Active" + (", edited" if edited else "") if i == active else "")
+        for i, button in enumerate(self.memory_buttons):
+            button.name_label.set_label(state.memory_names[i] or f"Memory {i + 1}")
+            if i == active:
+                button.add_css_class("suggested-action")
+            else:
+                button.remove_css_class("suggested-action")
         self._syncing = False
         self.stack.set_visible_child_name("amp")
         self._start_meter_polling()
@@ -435,9 +484,8 @@ class THRWindow(Adw.ApplicationWindow):
             callback(self)
 
     def _on_event(self, event) -> None:
-        updates = self.bindings.get((event.unit, event.param), [])
         self._syncing = True
-        for update in updates:
+        for update in self.bindings.get((event.unit, event.param), []):
             update(event.value)
         self._syncing = False
         if self.state and not self.state.system.get("user_setting_changed"):
@@ -447,34 +495,38 @@ class THRWindow(Adw.ApplicationWindow):
     def _amp_changed(self, *_args) -> None:
         if self._syncing:
             return
-        category = CATEGORIES[self.category_row.get_selected()]
+        category = CATEGORIES[self.category.get_selected()]
         character = self.character.get_active_name()
         symbol = AMP_GRID.get((category, character))
         if symbol:
             self.worker.submit("unit_type", "Amp", symbol, self.keep_knobs.get_active())
 
+    def _keep_changed(self, button) -> None:
+        self.prefs["keep_knobs"] = button.get_active()
+        settings.save(self.prefs)
+
     def _set_cab(self, value) -> None:
-        if isinstance(value, (int, float)) and 0 <= int(value) < len(CABINETS):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= int(value) < len(CABINETS):
             syncing, self._syncing = self._syncing, True
-            self.cab_row.set_selected(int(value))
+            self.cab.set_selected(int(value))
             self._syncing = syncing
 
-    def _cab_changed(self, row, _pspec) -> None:
+    def _cab_changed(self, dropdown, _pspec) -> None:
         if not self._syncing:
-            self.worker.set_param("GuitarProc", "SpkSimType", float(row.get_selected()))
+            self.worker.set_param("GuitarProc", "SpkSimType", float(dropdown.get_selected()))
 
     def _set_gate(self, value) -> None:
         syncing, self._syncing = self._syncing, True
-        self.gate_row.set_active(bool(value))
+        self.gate_switch.set_active(bool(value))
         self._syncing = syncing
 
-    def _gate_changed(self, row, _pspec) -> None:
+    def _gate_changed(self, switch, _pspec) -> None:
         if not self._syncing:
-            self.worker.set_param("GuitarProc", "GateEnable", 1.0 if row.get_active() else 0.0)
+            self.worker.set_param("GuitarProc", "GateEnable", 1.0 if switch.get_active() else 0.0)
 
-    def _stereo_changed(self, row, _pspec) -> None:
+    def _stereo_changed(self, switch, _pspec) -> None:
         if not self._syncing:
-            self.worker.submit("system", "extended_stereo", 1 if row.get_active() else 0)
+            self.worker.submit("system", "extended_stereo", 1 if switch.get_active() else 0)
 
     def _usb_changed(self, group, _pspec) -> None:
         if not self._syncing and group.get_sensitive():
