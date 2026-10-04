@@ -184,7 +184,13 @@ def cmd_load(thr: THR, args) -> None:
     before = thr.dump()
     backup = thrl6p.from_patch(before, f"Before {name}", firmware=thr.firmware)
     backup_path = thrl6p.write(backup, library.CACHE.parent / "last-tone-before-load.thrl6p")
-    skipped = thrl6p.apply(thr, preset)
+    hold = {}
+    amp = before.find("Amp")
+    if args.keep_master and amp:
+        hold[("Amp", "Master")] = amp.params.get("MasterState", 0.5)
+    if args.keep_gain and amp:
+        hold[("Amp", "Drive")] = amp.params.get("DriveState", 0.5)
+    skipped = thrl6p.apply(thr, preset, hold)
     print(f"Loaded {name!r} into the amp's current tone.")
     print(f"To keep it, hold a USER MEMORY button on the amp for 2 seconds.")
     print(f"Your previous tone is saved as {backup_path}; load that file to undo.")
@@ -262,6 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("load", help="Load a .thrl6p preset into the amp's current tone")
     p.add_argument("preset", help="A .thrl6p file, or a preset name from your folder or the community collection")
     p.add_argument("-v", "--verbose", action="store_true", help="List settings the preset's models don't use")
+    p.add_argument("--keep-master", action="store_true", help="Keep the current Master volume")
+    p.add_argument("--keep-gain", action="store_true", help="Keep the current Gain")
 
     p = sub.add_parser("save", help="Save the amp's current tone as a .thrl6p preset")
     p.add_argument("file", help="File name; a bare name goes in ~/Music/THR-II Presets")

@@ -65,12 +65,17 @@ def _number(value) -> float | None:
     return float(value)
 
 
-def plan(preset: dict) -> list[tuple]:
+def plan(preset: dict, hold: dict | None = None) -> list[tuple]:
     """Turn a preset into an ordered list of amp commands.
 
     Model switches come first, because selecting a model resets that unit's settings.
     Each step is ("type", unit, symbol) or ("param", unit, param, value).
+
+    ``hold`` maps (unit, param) to a value to keep instead of the preset's, for example
+    {("Amp", "Master"): 0.3} to keep the current volume. Held values are sent last, after
+    the model switches have reset them.
     """
+    hold = hold or {}
     tone = validate(preset)["data"]["tone"]
     steps: list[tuple] = []
     amp = tone.get("THRGroupAmp", {})
@@ -102,15 +107,17 @@ def plan(preset: dict) -> list[tuple]:
             steps.append(("param", PROC, key, number))
     if "@enabled" in gate:
         steps.append(("param", PROC, "GateEnable", 1.0 if gate["@enabled"] else 0.0))
+    steps = [s for s in steps if s[0] == "type" or (s[1], s[2]) not in hold]
+    steps.extend(("param", unit, param, float(value)) for (unit, param), value in hold.items())
     return steps
 
 
-def apply(thr, preset: dict) -> list[str]:
+def apply(thr, preset: dict, hold: dict | None = None) -> list[str]:
     """Send a preset to the amp. Returns notes about settings the amp skipped."""
     from .client import THRError
 
     skipped = []
-    for step in plan(preset):
+    for step in plan(preset, hold):
         try:
             if step[0] == "type":
                 ok = thr.set_unit_type(step[1], step[2])

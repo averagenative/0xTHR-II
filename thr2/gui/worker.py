@@ -177,11 +177,12 @@ class AmpWorker(threading.Thread):
             GLib.idle_add(self._on_error, "The amp didn't accept that setting.")
         self._refresh_requested = True
 
-    def _cmd_load_preset(self, preset: dict, name: str, keep_backup: bool) -> None:
+    def _cmd_load_preset(self, preset: dict, name: str, keep_backup: bool, hold: dict | None = None) -> None:
         backup = None
         if keep_backup:
             backup = thrl6p.from_patch(self.thr.dump(), "Tone before presets", firmware=self.thr.firmware)
-        skipped = thrl6p.apply(self.thr, preset)
+        LOG.info("Loading preset %r%s", name, f", keeping {sorted(p for _, p in hold)}" if hold else "")
+        skipped = thrl6p.apply(self.thr, preset, hold)
         self._refresh_requested = True
         GLib.idle_add(self._on_result, "loaded", name, backup, skipped)
 

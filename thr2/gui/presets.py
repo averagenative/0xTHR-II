@@ -48,7 +48,7 @@ class PresetsDialog(Adw.Dialog):
                                       margin_start=12, margin_end=12, margin_bottom=6)
         self.search.connect("search-changed", self._filter)
         view.add_top_bar(self.search)
-        self.banner = Adw.Banner(title="Original tone saved. To keep a preset, hold a USER MEMORY button.",
+        self.banner = Adw.Banner(title="Original tone saved. Hold USER MEMORY to keep a preset.",
                                  button_label="Restore original")
         self.banner.connect("button-clicked", self._restore)
         view.add_top_bar(self.banner)
@@ -83,6 +83,22 @@ class PresetsDialog(Adw.Dialog):
             description=f"Song and artist tones from github.com/{library.COMMUNITY_REPO}",
             header_suffix=update,
         )
+        volume = Adw.PreferencesGroup(
+            title="When loading a preset",
+            description="Presets set their own Gain and Master, so a preset can be much louder than your "
+                        "current tone. More Gain also sounds louder and more distorted.",
+        )
+        keep_master = Adw.SwitchRow(title="Keep my Master volume",
+                                    subtitle="Change the tone, not the volume",
+                                    active=bool(window.prefs.get("preset_keep_master", True)))
+        keep_master.connect("notify::active", self._keep_changed, "preset_keep_master")
+        keep_gain = Adw.SwitchRow(title="Keep my Gain",
+                                  subtitle="Use the preset's amp and effects at your current drive",
+                                  active=bool(window.prefs.get("preset_keep_gain", False)))
+        keep_gain.connect("notify::active", self._keep_changed, "preset_keep_gain")
+        volume.add(keep_master)
+        volume.add(keep_gain)
+        self.page.add(volume)
         self.page.add(self.user_group)
         self.page.add(self.community_group)
         self._populate()
@@ -115,6 +131,11 @@ class PresetsDialog(Adw.Dialog):
                 group.add(row)
                 self.rows.append((row, entry))
         self._filter(self.search)
+
+    def _keep_changed(self, row, _pspec, key: str) -> None:
+        self.window.prefs[key] = row.get_active()
+        from . import settings
+        settings.save(self.window.prefs)
 
     def _filter(self, entry_widget) -> None:
         query = entry_widget.get_text().strip().lower()

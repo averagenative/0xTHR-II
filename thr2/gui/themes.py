@@ -50,18 +50,18 @@ def rgb(hex_color: str) -> tuple:
 
 
 def grille_svg(color: str, opacity: float) -> str:
-    """One tile of the THR-II grille: rows of Y-shaped slots, alternate rows inverted."""
+    """One tile of the THR-II grille: upright Y-shaped slots in rows offset by half a slot."""
     arm, width = 3.3, 1.9
 
-    def y_shape(cx, cy, flip):
-        angles = (90, 210, 330) if not flip else (270, 30, 150)
+    def y_shape(cx, cy):
+        angles = (270, 30, 150)
         return "".join(
             f'<line x1="{cx}" y1="{cy}" x2="{cx + arm * math.cos(math.radians(a)):.2f}" '
             f'y2="{cy - arm * math.sin(math.radians(a)):.2f}"/>'
             for a in angles
         )
 
-    shapes = y_shape(6, 6, False) + y_shape(0, 16.5, True) + y_shape(12, 16.5, True)
+    shapes = y_shape(6, 5.5) + y_shape(0, 16) + y_shape(12, 16)
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="21" viewBox="0 0 12 21">'
         f'<g stroke="{color}" stroke-opacity="{opacity}" stroke-width="{width}" stroke-linecap="round">'

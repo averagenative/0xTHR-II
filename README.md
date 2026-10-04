@@ -41,6 +41,8 @@ Click **Presets** in the header bar to browse two sources:
 - **Your presets:** `.thrl6p` files in `~/Music/THR-II Presets`. **Save current tone** writes one there; THR Remote can open these files too.
 - **Community presets:** 234 song and artist tones from [f3sty/Yamaha_THRII_presets](https://github.com/f3sty/Yamaha_THRII_presets). The app downloads the collection to `~/.cache/thr2/community` the first time you open the browser. The collection has no license, so this repository doesn't include it.
 
+Presets set their own Gain and Master, which can be much louder than your current tone. **Keep my Master volume** (on by default) loads a preset's tone but keeps your Master, and **Keep my Gain** keeps your Gain too. On the command line, `load` takes `--keep-master` and `--keep-gain`.
+
 Click a preset to load it into the amp right away, so you can try several in a row. The knobs and pickers in the window follow along. The tone you had before the first one stays saved, and **Restore original** brings it back. Loading changes only the amp's current tone; to keep a preset, hold one of the amp's USER MEMORY buttons for 2 seconds.
 
 More presets are shared in the [Yamaha Musicians forum's "THR patch DOWNLOAD" thread](https://yamahamusicians.com/forum/viewtopic.php?t=9613) and in [guitarpatches.com's THRII library](https://guitarpatches.com/patches.php?unit=THRII). Both need a free account. Put downloaded `.thrl6p` files in `~/Music/THR-II Presets`, or use **Open file**.

@@ -71,6 +71,13 @@ class PlanTest(unittest.TestCase):
         ]:
             self.assertIn(expected, calls)
 
+    def test_hold_keeps_master_after_model_switch(self):
+        steps = thrl6p.plan(SAMPLE, hold={("Amp", "Master"): 0.2})
+        self.assertNotIn(("param", "Amp", "Master", 0.4), steps)
+        self.assertEqual(steps[-1], ("param", "Amp", "Master", 0.2))
+        self.assertLess(steps.index(("type", "Amp", "THR10C_DC30")), steps.index(steps[-1]))
+        self.assertIn(("param", "Amp", "Drive", 0.55), steps)
+
     def test_rejects_non_presets(self):
         with self.assertRaises(thrl6p.PresetError):
             thrl6p.validate({"data": {}})

@@ -291,8 +291,12 @@ class THRWindow(Adw.ApplicationWindow):
         self.presets_dialog.present(self)
 
     def load_preset(self, preset: dict, name: str) -> None:
-        self.log.info("Loading preset %r", name)
-        self.worker.submit("load_preset", preset, name, self.original_tone is None)
+        hold = {}
+        if self.prefs.get("preset_keep_master", True):
+            hold[("Amp", "Master")] = self.amp_knobs["Master"].value / 100.0
+        if self.prefs.get("preset_keep_gain", False):
+            hold[("Amp", "Drive")] = self.amp_knobs["Drive"].value / 100.0
+        self.worker.submit("load_preset", preset, name, self.original_tone is None, hold)
 
     def restore_original(self) -> None:
         if self.original_tone:
