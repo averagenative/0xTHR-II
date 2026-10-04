@@ -18,7 +18,26 @@ from ..device import DeviceNotFound, find_thr_midi  # noqa: E402
 from .console import ConsoleWindow  # noqa: E402
 from .indicators import LinkLight  # noqa: E402
 from .status import ApplyStatus  # noqa: E402
-from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
+try:
+    from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
+    METER_ERROR = None
+except (ImportError, ValueError) as _err:
+    METER_ERROR = str(_err)
+    CLIP_DB, DB_MIN, LevelMonitor = -0.1, -60.0, None
+
+    def find_capture_node():
+        return None
+
+    class LevelMeter(Gtk.Label):
+        def __init__(self):
+            super().__init__(label="Level meter unavailable: GStreamer isn't installed", xalign=0)
+            self.add_css_class("dim-label")
+
+        def set_levels(self, *_args):
+            pass
+
+        def reset(self):
+            pass
 from .presets import PresetsDialog  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
 
@@ -164,7 +183,7 @@ class EffectSlot:
 
 
 class THRWindow(Adw.ApplicationWindow):
-    def __init__(self, app, on_first_state=None):
+    def __init__(self, app, on_first_state=None, worker_class=None):
         super().__init__(application=app, title="THR-II", default_width=1320, default_height=700)
         self.prefs = settings.load()
         self.steps = StepSetting(float(self.prefs.get("knob_step", 2)))
@@ -286,7 +305,8 @@ class THRWindow(Adw.ApplicationWindow):
         self.toasts.set_child(view)
         self.set_content(self.toasts)
 
-        self.worker = AmpWorker(self._on_state, self._on_event, self._on_status, self._on_error, self._on_result)
+        self.worker = (worker_class or AmpWorker)(self._on_state, self._on_event, self._on_status, self._on_error,
+                                                   self._on_result)
         self._update_links()
         GLib.timeout_add_seconds(2, self._update_links)
         self.connect("close-request", self._on_close)
@@ -649,11 +669,16 @@ class THRWindow(Adw.ApplicationWindow):
         if not self._connected:
             self._meter_timer = 0
             return GLib.SOURCE_REMOVE
-        if self.monitor is None:
+        if self.monitor is None and LevelMonitor is not None:
             node = find_capture_node()
             if node:
                 self.log.info("Level meter watching %s", node)
-                self.monitor = LevelMonitor(node, self._on_level, self._on_meter_stopped)
+                try:
+                    self.monitor = LevelMonitor(node, self._on_level, self._on_meter_stopped)
+                except Exception as err:
+                    self.log.warning("Level meter unavailable: %s", err)
+                    self._meter_timer = 0
+                    return GLib.SOURCE_REMOVE
         return GLib.SOURCE_CONTINUE
 
     def _on_level(self, peaks, holds) -> None:

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tag v<version>, push it, and publish a GitHub release with the wheel, source archive,
 # AppImage, and SHA256SUMS. Release notes come from that version's CHANGELOG.md section.
-# Run through `make release`, which builds and tests first.
+# Run through `make release`, which builds and tests first. OVERWRITE=1 moves an existing
+# tag to HEAD and replaces that release's notes and files.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION="$1"
@@ -19,9 +20,16 @@ NOTES="$(mktemp)"
 awk -v v="## $VERSION " 'index($0, v) == 1 {f=1; next} /^## /{f=0} f' CHANGELOG.md > "$NOTES"
 [ -s "$NOTES" ] || { echo "No CHANGELOG.md section for $VERSION" >&2; exit 1; }
 
-git rev-parse "$TAG" >/dev/null 2>&1 || git tag -a "$TAG" -m "0xTHR-II $VERSION"
-git push -q origin HEAD "$TAG"
+if [ "${OVERWRITE:-0}" = 1 ]; then
+    git tag -f -a "$TAG" -m "0xTHR-II $VERSION"
+    git push -q origin HEAD
+    git push -q -f origin "$TAG"
+else
+    git rev-parse "$TAG" >/dev/null 2>&1 || git tag -a "$TAG" -m "0xTHR-II $VERSION"
+    git push -q origin HEAD "$TAG"
+fi
 if gh release view "$TAG" >/dev/null 2>&1; then
+    gh release edit "$TAG" --notes-file "$NOTES"
     gh release upload "$TAG" "${FILES[@]}" dist/SHA256SUMS --clobber
 else
     gh release create "$TAG" --title "0xTHR-II $VERSION" --notes-file "$NOTES" "${FILES[@]}" dist/SHA256SUMS

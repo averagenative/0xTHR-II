@@ -1,0 +1,23 @@
+# Builder image for the standalone AppImage. Debian 13 is old enough (glibc 2.41) to run on
+# current distributions and new enough to ship libadwaita 1.7.
+FROM docker.io/library/debian:trixie
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 python3-gi python3-gi-cairo python3-cairo \
+      gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gstreamer-1.0 libgtk-4-dev \
+      gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pipewire libpipewire-0.3-modules \
+      librsvg2-common librsvg2-bin adwaita-icon-theme shared-mime-info \
+      file curl ca-certificates desktop-file-utils appstream patchelf dpkg-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/tools \
+ && curl -fsSL -o /opt/tools/linuxdeploy \
+      https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+ && curl -fsSL -o /opt/tools/linuxdeploy-plugin-gtk.sh \
+      https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh \
+ && curl -fsSL -o /opt/tools/appimagetool \
+      https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+ && chmod +x /opt/tools/*
+
+ENV APPIMAGE_EXTRACT_AND_RUN=1 PATH=/opt/tools:$PATH

@@ -40,10 +40,11 @@ def save_png(window: Gtk.Window, path: str, widget: Gtk.Widget | None = None) ->
 
 
 class THRApplication(Adw.Application):
-    def __init__(self, screenshot: str | None = None, height: int | None = None):
+    def __init__(self, screenshot: str | None = None, height: int | None = None, demo: bool = False):
         super().__init__(application_id=APP_ID)
         self.screenshot = screenshot
         self.height = height
+        self.demo = demo
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -69,7 +70,12 @@ class THRApplication(Adw.Application):
     def do_activate(self):
         window = self.get_active_window()
         if window is None:
-            window = THRWindow(self, on_first_state=self._capture if self.screenshot else None)
+            worker_class = None
+            if self.demo:
+                from .demo import DemoWorker
+                worker_class = DemoWorker
+            window = THRWindow(self, on_first_state=self._capture if self.screenshot else None,
+                               worker_class=worker_class)
             if self.height:
                 window.set_default_size(720, self.height)
         window.present()
@@ -87,11 +93,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--screenshot", metavar="PNG", help="Render the window to a PNG after connecting, then quit")
     parser.add_argument("--height", type=int, help="Window height, useful with --screenshot")
     parser.add_argument("--debug", action="store_true", help="Log raw frames and print the log to the terminal")
+    parser.add_argument("--demo", action="store_true", help="Open with sample settings and no amp")
     args, rest = parser.parse_known_args(argv)
     if args.debug:
         log.to_stderr()
         log.enable_debug(True)
-    app = THRApplication(args.screenshot, args.height)
-    if args.screenshot:
+    app = THRApplication(args.screenshot, args.height, args.demo)
+    if args.screenshot or args.demo:
         app.set_flags(app.get_flags() | Gio.ApplicationFlags.NON_UNIQUE)
     return app.run([sys.argv[0], *rest])

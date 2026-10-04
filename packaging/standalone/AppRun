@@ -1,0 +1,42 @@
+#!/bin/sh
+# THR-II Control standalone AppImage. Python, PyGObject, GTK 4, libadwaita, and GStreamer are
+# bundled. The host provides glibc, the display and graphics stack, fonts and text shaping, and
+# libpipewire (which must match the running PipeWire daemon), as on any desktop.
+#   ./0xTHR-II.AppImage                 the app (add --demo to try it without an amp)
+#   ./0xTHR-II.AppImage cli info        the thr2 command-line tool
+#   ./0xTHR-II.AppImage cli paths       where settings, presets, and caches live
+#   ./0xTHR-II.AppImage --install       add it to the app grid with its icon
+#   ./0xTHR-II.AppImage --uninstall     remove that integration
+#   ./0xTHR-II.AppImage --version
+HERE="$(dirname "$(readlink -f "$0")")"
+export APPDIR="$HERE" THR2_APPDIR="$HERE"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/thr2"
+
+for hook in "$HERE"/apprun-hooks/*.sh; do
+    [ -f "$hook" ] && . "$hook"
+done
+# The GTK hook forces X11 and GTK's built-in theme. GTK 4 runs natively on Wayland, and
+# GTK_THEME hides libadwaita's stylesheet (toggle groups lose their styling), so undo both.
+unset GDK_BACKEND GTK_THEME
+
+export PYTHONHOME="$HERE/usr"
+export PYTHONPATH="$HERE/usr/lib/thr2:$HERE/usr/lib/python3/dist-packages"
+export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+export GI_TYPELIB_PATH="$HERE/usr/lib/girepository-1.0"
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$HERE/usr/lib/gstreamer-1.0" GST_PLUGIN_PATH_1_0=""
+export GST_PLUGIN_SCANNER_1_0="$HERE/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
+export GST_REGISTRY_1_0="$CACHE/gstreamer-registry-$(basename "${APPIMAGE:-standalone}").bin"
+mkdir -p "$CACHE" 2>/dev/null
+
+PY="$HERE/usr/bin/python3"
+case "$(basename "${ARGV0:-$0}")" in
+    thr2|thr2-cli) exec "$PY" -m thr2 "$@" ;;
+esac
+case "${1:-}" in
+    cli) shift; exec "$PY" -m thr2 "$@" ;;
+    --install|--uninstall) exec "$PY" -m thr2.gui.integrate "$@" ;;
+    --version) exec "$PY" -c 'import thr2; print("THR-II Control", thr2.__version__)' ;;
+esac
+exec "$PY" -m thr2.gui "$@"

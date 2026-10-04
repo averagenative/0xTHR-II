@@ -7,8 +7,8 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 ## Requirements
 
 - Linux with ALSA. The amp shows up as a class-compliant USB audio and MIDI device; no driver needed.
-- Python 3.10 or later. The command-line tool needs no third-party packages.
-- For the app: GTK 4, libadwaita 1.7 or later, PyGObject, and GStreamer with the PipeWire plugin for the level meter. Fedora Workstation includes all of them.
+- For the AppImage: an x86_64 desktop with glibc 2.41 or later (Fedora 42, Ubuntu 25.04, Debian 13, or later) and PipeWire for the level meter. It brings its own Python, GTK 4, libadwaita, and GStreamer.
+- For the wheel or a source checkout: Python 3.10 or later, and for the app, GTK 4, libadwaita 1.7 or later, PyGObject, and GStreamer with the PipeWire plugin. Fedora Workstation includes all of them. The command-line tool needs no third-party packages.
 - No group membership. logind gives the logged-in user access to `/dev/snd/midiC*D*`.
 
 ## Install
@@ -20,7 +20,7 @@ chmod +x 0xTHR-II-1.0.1-x86_64.AppImage
 ./0xTHR-II-1.0.1-x86_64.AppImage --install
 ```
 
-`--install` copies it to `~/Applications` and adds **THR-II Control** to your app grid with its icon. Run the AppImage with `cli` for the command-line tool (`./0xTHR-II-1.0.1-x86_64.AppImage cli info`), and with `--uninstall` to remove the menu entry. The AppImage runs on your system's Python 3.10 or later, PyGObject, GTK 4, libadwaita 1.7 or later, and GStreamer with the PipeWire plugin; if one is missing, it says what to install.
+`--install` copies it to `~/Applications` and adds **THR-II Control** to your app grid with its icon. Run the AppImage with `cli` for the command-line tool (`./0xTHR-II-1.0.1-x86_64.AppImage cli info`), and with `--uninstall` to remove the menu entry. The AppImage is standalone: it bundles Python 3.13, GTK 4, libadwaita, and the GStreamer plugins the level meter needs, so you don't install anything else. It uses your system's graphics drivers, fonts, and PipeWire.
 
 Or install the wheel for your user, which gives you the `thr2` command and the `thr2-gui` app:
 
@@ -121,7 +121,7 @@ Run `thr2 paths` (or `cli paths` with the AppImage) to list them. Nothing is wri
 | Settings | `~/.config/thr2/settings.json` |
 | Your presets | `THR-II Presets` in your Music folder |
 | Community presets | `~/.cache/thr2/community/` |
-| Symbol tables, the last memory saved, and the tone before a CLI preset load | `~/.cache/thr2/` |
+| Symbol tables, the last memory saved, the tone before a CLI preset load, and the AppImage's GStreamer plugin registry | `~/.cache/thr2/` |
 | AppImage installed with `--install` | `~/Applications/` |
 | Menu entry and icons from `--install` | `~/.local/share/applications/` and `~/.local/share/icons/hicolor/` |
 
@@ -129,7 +129,9 @@ Run `thr2 paths` (or `cli paths` with the AppImage) to list them. Nothing is wri
 
 ## Building releases
 
-`make appimage` builds `dist/0xTHR-II-<version>-x86_64.AppImage` (it downloads appimagetool into `build/` the first time). `make release` runs the tests, builds the wheel, source archive, and AppImage, tags `v<version>`, and publishes a GitHub release with the matching CHANGELOG section and checksums. There's no CI; releases are built locally.
+`make appimage` builds `dist/0xTHR-II-<version>-x86_64.AppImage` in a Debian 13 container with Podman, so the bundle runs on any distribution with the same or a newer glibc. The first build creates the builder image, which downloads linuxdeploy, its GTK plugin, and appimagetool. `packaging/test-standalone.sh` runs the result in a minimal Fedora container that has no Python, GTK, or GStreamer, and saves a screenshot of the window to `dist/standalone-test.png`.
+
+`make release` runs the tests, builds the wheel, source archive, and AppImage, tags `v<version>`, and publishes a GitHub release with the matching CHANGELOG section and checksums. `OVERWRITE=1 make release` moves the tag to the current commit and replaces the files of an existing release. There's no CI; releases are built locally.
 
 ## Console and debug output
 

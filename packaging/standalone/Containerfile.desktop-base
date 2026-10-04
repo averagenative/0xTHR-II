@@ -1,0 +1,9 @@
+# Test image for the standalone AppImage: the libraries every desktop provides (the ones
+# linuxdeploy leaves to the host), fonts, and Mesa, and nothing else. No Python, GTK,
+# libadwaita, GStreamer, or PyGObject.
+FROM registry.fedoraproject.org/fedora-minimal:44
+RUN microdnf install -y --setopt=install_weak_deps=0 \
+      expat fontconfig freetype harfbuzz fribidi libX11 libX11-xcb libxcb libdrm libwayland-client \
+      zlib-ng-compat libuuid libcom_err gmp pipewire-libs \
+      mesa-dri-drivers mesa-libEGL libglvnd-egl libglvnd-gles dejavu-sans-fonts xkeyboard-config \
+ && microdnf clean all

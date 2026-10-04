@@ -2,11 +2,12 @@
 
 ## 1.0.1 (2026-10-04)
 
-- AppImage release: `0xTHR-II-1.0.1-x86_64.AppImage` runs on the system's Python, GTK 4, libadwaita, and GStreamer, and explains what to install if something is missing. `--install` adds it to the app grid with its icon; `--uninstall` removes that; `cli` runs the command-line tool.
+- Standalone AppImage: `0xTHR-II-1.0.1-x86_64.AppImage` bundles Python 3.13, GTK 4, libadwaita, and GStreamer, so it runs without installing anything on any x86_64 desktop with glibc 2.41 or later (Fedora 42, Ubuntu 25.04, Debian 13, or later). `--install` adds it to the app grid with its icon; `--uninstall` removes that; `cli` runs the command-line tool.
+- If GStreamer or its PipeWire plugin is missing (wheel or source installs), the app starts without the level meter instead of failing.
 - `thr2 paths` shows where settings, presets, and caches are stored, and the app's Console lists them at startup.
 - Your presets folder follows the desktop's Music folder, including localized names.
 - With the amp off, the app retries Bluetooth every 5 to 30 seconds instead of every 2 seconds. USB is still checked every 2 seconds.
-- `make release` builds the wheel, source archive, and AppImage, and publishes a GitHub release with checksums.
+- `make release` builds the wheel, source archive, and AppImage, and publishes a GitHub release with checksums. `packaging/test-standalone.sh` checks the AppImage in a bare container.
 
 ## 1.0.0 (2026-10-04)
 
