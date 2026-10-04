@@ -11,7 +11,9 @@ from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
 from ..client import AMP_NAMES, CABINETS  # noqa: E402
 from . import settings  # noqa: E402
 from .knob import Knob, StepSetting  # noqa: E402
+from .. import library, thrl6p  # noqa: E402
 from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
+from .presets import PresetsDialog  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
 
 MODELS = {0: "THR10II", 1: "THR10II Wireless", 2: "THR30II Wireless", 3: "THR30IIA Wireless"}
@@ -168,6 +170,8 @@ class THRWindow(Adw.ApplicationWindow):
         self.monitor: LevelMonitor | None = None
         self._meter_timer = 0
         self._connected = False
+        self.presets_dialog: PresetsDialog | None = None
+        self.original_tone: dict | None = None
 
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
@@ -199,6 +203,10 @@ class THRWindow(Adw.ApplicationWindow):
         self.step_toggle.connect("notify::active-name", self._step_changed)
         step_box.append(step_label)
         step_box.append(self.step_toggle)
+        presets_button = Gtk.Button(child=Adw.ButtonContent(icon_name="view-list-bullet-symbolic", label="Presets"),
+                                    tooltip_text="Browse, load, and save presets")
+        presets_button.connect("clicked", self._show_presets)
+        header.pack_start(presets_button)
         header.pack_start(step_box)
         view.add_top_bar(header)
 
@@ -219,12 +227,43 @@ class THRWindow(Adw.ApplicationWindow):
         self.toasts.set_child(view)
         self.set_content(self.toasts)
 
-        self.worker = AmpWorker(self._on_state, self._on_event, self._on_status, self._on_error)
+        self.worker = AmpWorker(self._on_state, self._on_event, self._on_status, self._on_error, self._on_result)
         self.connect("close-request", self._on_close)
         self.worker.start()
 
     def bind(self, key, update) -> None:
         self.bindings.setdefault(key, []).append(update)
+
+    def is_connected(self) -> bool:
+        return self._connected and self.state is not None
+
+    def _show_presets(self, _button) -> None:
+        self.original_tone = None
+        self.presets_dialog = PresetsDialog(self)
+        self.presets_dialog.connect("closed", lambda *_: setattr(self, "presets_dialog", None))
+        self.presets_dialog.present(self)
+
+    def load_preset(self, preset: dict, name: str) -> None:
+        self.worker.submit("load_preset", preset, name, self.original_tone is None)
+
+    def restore_original(self) -> None:
+        if self.original_tone:
+            self.worker.submit("load_preset", self.original_tone, "your original tone", False)
+            self.original_tone = None
+
+    def save_preset(self, path, name: str) -> None:
+        self.worker.submit("save_preset", path, name)
+
+    def _on_result(self, kind: str, *args) -> None:
+        if kind == "loaded":
+            _name, backup, _skipped = args
+            if backup is not None:
+                self.original_tone = backup
+                thrl6p.write(backup, library.CACHE.parent / "last-tone-before-load.thrl6p")
+                if self.presets_dialog:
+                    self.presets_dialog.show_original_saved()
+        elif kind == "saved" and self.presets_dialog:
+            self.presets_dialog.saved(args[0])
 
     def _on_close(self, *_args):
         self._stop_meter()

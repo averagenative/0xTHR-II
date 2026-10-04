@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from .client import AMP_NAMES, CABINETS, SYSTEM_SETTINGS, THR, THRError, TYPE_FLOAT, word_float
+from . import library, thrl6p
 from .device import DeviceNotFound
 from .patch import Patch
 
@@ -159,6 +161,60 @@ def cmd_fx(thr: THR, args) -> None:
         print(f"{name:7s} {state}  {model.type if model else '?':20s} {label}")
 
 
+def resolve_preset(target: str) -> tuple[dict, str]:
+    """Accept a file path or a preset name from your folder or the community collection."""
+    path = Path(target).expanduser()
+    if path.exists():
+        preset = thrl6p.read(path)
+        return preset, thrl6p.name_of(preset, path.stem)
+    if not library.community_ready():
+        print("Downloading the community preset collection...", file=sys.stderr)
+        library.download_community()
+    matches = library.find(target)
+    if not matches:
+        sys.exit(f"No preset file or name matches {target!r}. Try: thr2 presets {target.split()[0]}")
+    if len(matches) > 1:
+        names = "\n  ".join(e.name for e in matches[:15])
+        sys.exit(f"{len(matches)} presets match {target!r}. Be more specific:\n  {names}")
+    return thrl6p.read(matches[0].path), matches[0].name
+
+
+def cmd_load(thr: THR, args) -> None:
+    preset, name = resolve_preset(args.preset)
+    before = thr.dump()
+    backup = thrl6p.from_patch(before, f"Before {name}", firmware=thr.firmware)
+    backup_path = thrl6p.write(backup, library.CACHE.parent / "last-tone-before-load.thrl6p")
+    skipped = thrl6p.apply(thr, preset)
+    print(f"Loaded {name!r} into the amp's current tone.")
+    print(f"To keep it, hold a USER MEMORY button on the amp for 2 seconds.")
+    print(f"Your previous tone is saved as {backup_path}; load that file to undo.")
+    if skipped and args.verbose:
+        print("Skipped settings the current models don't use:")
+        for note in skipped:
+            print(f"  {note}")
+
+
+def cmd_save(thr: THR, args) -> None:
+    patch = thr.dump()
+    name = args.name or Path(args.file).stem
+    target = Path(args.file).expanduser()
+    if not target.is_absolute() and target.parent == Path("."):
+        target = library.USER_DIR / target
+    path = thrl6p.write(thrl6p.from_patch(patch, name, firmware=thr.firmware), target)
+    print(f"Saved the current tone as {path}")
+
+
+def cmd_presets(args) -> None:
+    if args.update or not library.community_ready():
+        print(f"Downloaded {library.download_community()} community presets.", file=sys.stderr)
+    entries = library.user() + library.community()
+    if args.filter:
+        entries = [e for e in entries if args.filter.lower() in e.name.lower()]
+    for e in entries:
+        amp = AMP_NAMES.get(e.amp, e.amp)
+        print(f"{e.source:9s} {e.name:42s} {amp}")
+
+
 def cmd_symbols(thr: THR, args) -> None:
     for i, name in enumerate(thr.symbols):
         if not args.filter or args.filter.lower() in name.lower():
@@ -200,6 +256,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("fx", help="Show effects, or switch them: fx off, fx effect off, fx reverb on")
     p.add_argument("args", nargs="*", metavar="[comp|effect|echo|reverb] [on|off]")
 
+    p = sub.add_parser("load", help="Load a .thrl6p preset into the amp's current tone")
+    p.add_argument("preset", help="A .thrl6p file, or a preset name from your folder or the community collection")
+    p.add_argument("-v", "--verbose", action="store_true", help="List settings the preset's models don't use")
+
+    p = sub.add_parser("save", help="Save the amp's current tone as a .thrl6p preset")
+    p.add_argument("file", help="File name; a bare name goes in ~/Music/THR-II Presets")
+    p.add_argument("--name", help="Preset name shown in THR Remote and this app")
+
+    p = sub.add_parser("presets", help="List presets in your folder and the community collection")
+    p.add_argument("filter", nargs="?")
+    p.add_argument("--update", action="store_true", help="Download the community collection again")
+
     p = sub.add_parser("symbols", help="List the amp's symbol table")
     p.add_argument("filter", nargs="?")
     return parser
@@ -207,7 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 COMMANDS = {
     "info": cmd_info, "dump": cmd_dump, "monitor": cmd_monitor, "set": cmd_set,
-    "amp": cmd_amp, "cab": cmd_cab, "system": cmd_system, "di": cmd_di, "fx": cmd_fx, "symbols": cmd_symbols,
+    "amp": cmd_amp, "cab": cmd_cab, "system": cmd_system, "di": cmd_di, "fx": cmd_fx, "load": cmd_load, "save": cmd_save, "symbols": cmd_symbols,
 }
 
 
@@ -221,6 +289,9 @@ def main(argv: list[str] | None = None) -> int:
         unknown = [w for w in words_ if w not in FX_UNITS and w not in ("on", "off")]
         if unknown:
             parser.error(f"fx: unknown argument {unknown[0]!r}; use comp, effect, echo, reverb, on, off")
+    if args.command == "presets":
+        cmd_presets(args)
+        return 0
     try:
         with THR.open() as thr:
             COMMANDS[args.command](thr, args)

@@ -64,7 +64,7 @@ class THRApplication(Adw.Application):
             save_png(window, self.screenshot)
             window.close()
             return GLib.SOURCE_REMOVE
-        GLib.timeout_add(1200, shoot)
+        GLib.timeout_add(3500, shoot)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from gi.repository import GLib
 
+from .. import thrl6p
 from ..client import THR, THRError
 from ..device import DeviceNotFound
 
@@ -31,8 +32,9 @@ class AmpState:
 
 
 class AmpWorker(threading.Thread):
-    def __init__(self, on_state, on_event, on_status, on_error):
+    def __init__(self, on_state, on_event, on_status, on_error, on_result=None):
         super().__init__(name="thr2-worker", daemon=True)
+        self._on_result = on_result or (lambda *args: None)
         self._on_state = on_state
         self._on_event = on_event
         self._on_status = on_status
@@ -142,6 +144,18 @@ class AmpWorker(threading.Thread):
         if not self.thr.set_system(name, value):
             GLib.idle_add(self._on_error, "The amp didn't accept that setting.")
         self._refresh_requested = True
+
+    def _cmd_load_preset(self, preset: dict, name: str, keep_backup: bool) -> None:
+        backup = None
+        if keep_backup:
+            backup = thrl6p.from_patch(self.thr.dump(), "Tone before presets", firmware=self.thr.firmware)
+        skipped = thrl6p.apply(self.thr, preset)
+        self._refresh_requested = True
+        GLib.idle_add(self._on_result, "loaded", name, backup, skipped)
+
+    def _cmd_save_preset(self, path, name: str) -> None:
+        preset = thrl6p.from_patch(self.thr.dump(), name, firmware=self.thr.firmware)
+        GLib.idle_add(self._on_result, "saved", str(thrl6p.write(preset, path)))
 
     def _cmd_recall(self, index: int) -> None:
         if not self.thr.recall(index):
