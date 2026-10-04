@@ -4,15 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thr2"
-version = "0.1.0"
-description = "Native Linux control for Yamaha THR-II amps over USB MIDI"
+version = "1.0.0"
+description = "Native Linux control for Yamaha THR-II amps over USB and Bluetooth: library, CLI, and GTK4 app"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = []
+keywords = ["yamaha", "thr", "thr30ii", "guitar", "amp", "midi", "sysex", "gtk4", "libadwaita"]
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: MIDI",
+    "Environment :: X11 Applications :: GTK",
+]
+
+[project.optional-dependencies]
+gui = ["PyGObject>=3.50"]
+
+[project.urls]
+Homepage = "https://github.com/averagenative/0xTHR-II"
 
 [project.scripts]
 thr2 = "thr2.cli:main"
 
+[project.gui-scripts]
+thr2-gui = "thr2.gui.app:main"
+
 [tool.setuptools]
-packages = ["thr2"]
+packages = ["thr2", "thr2.gui"]

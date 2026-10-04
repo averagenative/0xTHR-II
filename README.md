@@ -1,8 +1,8 @@
 # 0xTHR-II
 
-Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II Wireless) over USB or Bluetooth. Yamaha's THR Remote app only runs on Windows, macOS, iOS, and Android. This project talks to the amp's USB MIDI port directly, so you can read and change its settings from Linux, including switching the USB recording output to the dry guitar signal.
+Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II Wireless) over USB or Bluetooth. Yamaha's THR Remote app only runs on Windows, macOS, iOS, and Android. This project talks to the amp's MIDI interface directly, over USB or Bluetooth LE, so you can read and change its settings from Linux: amp models, effects, presets, user memories, and the USB recording output.
 
-**Status:** working prototype with a GTK4 app and a command-line tool. Tested on a THR30II Wireless running firmware 1.40.0a on Fedora 44.
+**Status:** 1.0. A GTK4 app and a command-line tool, tested on a THR30II Wireless running firmware 1.40.0a on Fedora 44. Other THR-II models and firmware versions should work but haven't been tried.
 
 ## Requirements
 
@@ -11,9 +11,20 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 - For the app: GTK 4, libadwaita 1.7 or later, PyGObject, and GStreamer with the PipeWire plugin for the level meter. Fedora Workstation includes all of them.
 - No group membership. logind gives the logged-in user access to `/dev/snd/midiC*D*`.
 
-## The app
+## Install
 
-Run `make install` once to add **THR-II Control** to your GNOME app grid, or start it from this directory with `make gui`.
+From a release, download the wheel from the [releases page](https://github.com/averagenative/0xTHR-II/releases) and install it for your user:
+
+```bash
+pip install --user thr2-1.0.0-py3-none-any.whl
+thr2-gui
+```
+
+That gives you the `thr2` command and the `thr2-gui` app. The app uses your system's PyGObject, GTK, and libadwaita, so install with your system Python rather than a separate virtual environment.
+
+From a clone, run `make gui` to start the app, or `make install` once to add **THR-II Control** to your GNOME app grid with an icon. `pip install --user -e .` installs the `thr2` command.
+
+## The app
 
 Everything fits on one screen, laid out like the amp's front panel:
 
@@ -92,8 +103,6 @@ python3 -m thr2 save "My crunch"
 `load` accepts a file path or a preset name, and saves your previous tone to `~/.cache/thr2/last-tone-before-load.thrl6p` first. `save` writes to `~/Music/THR-II Presets` unless you give a path.
 
 `set`, `di`, `fx`, `load`, and `save` are verified on hardware. `amp` and `cab` use commands from the protocol notes but haven't been tested yet. Switching the amp model might reset its knobs, so save your tone to a user memory on the amp first.
-
-To install the `thr2` command for your user, run `pip install --user -e .` in this directory.
 
 ## Console and debug output
 
