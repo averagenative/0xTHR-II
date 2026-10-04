@@ -17,6 +17,7 @@ from .. import library, log, thrl6p  # noqa: E402
 from ..device import DeviceNotFound, find_thr_midi  # noqa: E402
 from .console import ConsoleWindow  # noqa: E402
 from .indicators import LinkLight  # noqa: E402
+from .status import ApplyStatus  # noqa: E402
 from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
 from .presets import PresetsDialog  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
@@ -178,6 +179,10 @@ class THRWindow(Adw.ApplicationWindow):
         self.transport = "USB"
         self.presets_dialog: PresetsDialog | None = None
         self.original_tone: dict | None = None
+        self.applying: str | None = None
+        self.pending: tuple | None = None
+        self.apply_total = 0
+        self.apply_done = 0
 
         self.add_css_class("thr2-window")
         if self.prefs.get("debug") and not log.debug_enabled():
@@ -249,6 +254,8 @@ class THRWindow(Adw.ApplicationWindow):
         header.pack_start(presets_button)
         header.pack_start(step_box)
         view.add_top_bar(header)
+        self.apply_status = ApplyStatus()
+        view.add_top_bar(self.apply_status)
 
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
         self.waiting = Adw.StatusPage(
@@ -298,22 +305,59 @@ class THRWindow(Adw.ApplicationWindow):
             hold[("Amp", "Master")] = self.amp_knobs["Master"].value / 100.0
         if self.prefs.get("preset_keep_gain", False):
             hold[("Amp", "Drive")] = self.amp_knobs["Drive"].value / 100.0
-        if self.state is not None:
-            predicted = thrl6p.to_patch(preset, self.state.patch, hold)
-            self._on_state(dataclasses.replace(self.state, patch=predicted))
-        self.worker.submit("load_preset", preset, name, self.original_tone is None, hold)
+        self._start_apply(preset, name, self.original_tone is None, hold)
 
     def restore_original(self) -> None:
         if self.original_tone:
-            self.worker.submit("load_preset", self.original_tone, "your original tone", False)
+            self._start_apply(self.original_tone, "your original tone", False, None)
             self.original_tone = None
+
+    def _start_apply(self, preset: dict, name: str, keep_backup: bool, hold: dict | None) -> None:
+        if self.applying:
+            self.pending = (preset, name, keep_backup, hold)
+            self._status("update", self.applying, self.apply_done, self.apply_total, name)
+            return
+        self.applying = name
+        self.apply_done = self.apply_total = 0
+        self._status("update", name, 0, 0)
+        if self.presets_dialog:
+            self.presets_dialog.set_applying(name)
+        if self.state is not None:
+            predicted = thrl6p.to_patch(preset, self.state.patch, hold)
+            self._on_state(dataclasses.replace(self.state, patch=predicted))
+        self.worker.submit("load_preset", preset, name, keep_backup, hold)
+
+    def _status(self, method: str, *args) -> None:
+        getattr(self.apply_status, method)(*args)
+        if self.presets_dialog:
+            getattr(self.presets_dialog.status, method)(*args)
+
+    def _apply_finished(self) -> None:
+        self.applying = None
+        if self.presets_dialog:
+            self.presets_dialog.set_applying(None)
+        if self.pending:
+            pending, self.pending = self.pending, None
+            self._start_apply(*pending)
 
     def save_preset(self, path, name: str) -> None:
         self.worker.submit("save_preset", path, name)
 
     def _on_result(self, kind: str, *args) -> None:
+        if kind == "progress":
+            name, done, total = args
+            self.apply_done, self.apply_total = done, total
+            next_name = self.pending[1] if self.pending else None
+            self._status("update", name, done, total, next_name)
+            return
+        if kind == "failed":
+            self._status("fail", args[0])
+            self._apply_finished()
+            return
         if kind == "loaded":
-            _name, backup, _skipped = args
+            name, backup, _skipped = args
+            self._status("finish", name, self.apply_total)
+            self._apply_finished()
             if backup is not None:
                 self.original_tone = backup
                 thrl6p.write(backup, library.CACHE.parent / "last-tone-before-load.thrl6p")

@@ -43,7 +43,7 @@ Click **Presets** in the header bar to browse two sources:
 
 Presets set their own Gain and Master, which can be much louder than your current tone. **Keep my Master volume** (on by default) loads a preset's tone but keeps your Master, and **Keep my Gain** keeps your Gain too. On the command line, `load` takes `--keep-master` and `--keep-gain`.
 
-Click a preset to load it into the amp right away, so you can try several in a row. The knobs and pickers in the window follow along. The tone you had before the first one stays saved, and **Restore original** brings it back. Loading changes only the amp's current tone; to keep a preset, hold one of the amp's USER MEMORY buttons for 2 seconds.
+Click a preset to load it into the amp right away, so you can try several in a row. The knobs and pickers in the window follow along, and a bar under the header shows the preset being applied with a count of confirmed changes. If you click another preset meanwhile, the app finishes the current one and then applies only your latest pick. The tone you had before the first one stays saved, and **Restore original** brings it back. Loading changes only the amp's current tone; to keep a preset, hold one of the amp's USER MEMORY buttons for 2 seconds.
 
 More presets are shared in the [Yamaha Musicians forum's "THR patch DOWNLOAD" thread](https://yamahamusicians.com/forum/viewtopic.php?t=9613) and in [guitarpatches.com's THRII library](https://guitarpatches.com/patches.php?unit=THRII). Both need a free account. Put downloaded `.thrl6p` files in `~/Music/THR-II Presets`, or use **Open file**.
 

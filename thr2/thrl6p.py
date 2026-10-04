@@ -162,17 +162,25 @@ def plan(preset: dict, hold: dict | None = None, current: Patch | None = None) -
     return steps
 
 
-def apply(thr, preset: dict, hold: dict | None = None, current: Patch | None = None) -> list[str]:
-    """Send a preset to the amp. Returns notes about settings the amp skipped."""
+def apply(thr, preset: dict, hold: dict | None = None, current: Patch | None = None,
+          progress=None) -> list[str]:
+    """Send a preset to the amp. Returns notes about settings the amp skipped.
+
+    ``progress(done, total)`` is called as changes are confirmed.
+    """
     from .client import THRError
 
     steps = plan(preset, hold, current)
+    if progress:
+        progress(0, len(steps))
     try:
-        return thr.batch(steps)
+        return thr.batch(steps, progress=progress)
     except (AttributeError, THRError):
         pass
     skipped = []
-    for step in steps:
+    for done, step in enumerate(steps, 1):
+        if progress:
+            progress(done, len(steps))
         try:
             if step[0] == "type":
                 ok = thr.set_unit_type(step[1], step[2])

@@ -17,6 +17,7 @@ from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from .. import library, thrl6p  # noqa: E402
 from ..client import AMP_NAMES  # noqa: E402
+from .status import ApplyStatus  # noqa: E402
 
 EFFECT_NAMES = {
     "RedComp": "Compressor", "StereoSquareChorus": "Chorus", "L6Flanger": "Flanger", "Phaser": "Phaser",
@@ -48,6 +49,8 @@ class PresetsDialog(Adw.Dialog):
                                       margin_start=12, margin_end=12, margin_bottom=6)
         self.search.connect("search-changed", self._filter)
         view.add_top_bar(self.search)
+        self.status = ApplyStatus()
+        view.add_top_bar(self.status)
         self.banner = Adw.Banner(title="Original tone saved. Hold USER MEMORY to keep a preset.",
                                  button_label="Restore original")
         self.banner.connect("button-clicked", self._restore)
@@ -126,7 +129,13 @@ class PresetsDialog(Adw.Dialog):
             for entry in entries:
                 row = Adw.ActionRow(title=GLib.markup_escape_text(entry.name), subtitle=GLib.markup_escape_text(describe(entry)),
                                     activatable=True)
-                row.add_suffix(Gtk.Image.new_from_icon_name("media-playback-start-symbolic"))
+                row.icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
+                row.spinner = Adw.Spinner(visible=False)
+                row.add_suffix(row.spinner)
+                row.add_suffix(row.icon)
+                if entry.name == self.window.applying:
+                    row.icon.set_visible(False)
+                    row.spinner.set_visible(True)
                 row.connect("activated", self._activate, entry)
                 group.add(row)
                 self.rows.append((row, entry))
@@ -136,6 +145,15 @@ class PresetsDialog(Adw.Dialog):
         self.window.prefs[key] = row.get_active()
         from . import settings
         settings.save(self.window.prefs)
+
+    def set_applying(self, name: str | None) -> None:
+        """Show a spinner on the preset being applied, or clear it when ``name`` is None."""
+        for row, entry in self.rows:
+            if entry is None or not hasattr(row, "spinner"):
+                continue
+            busy = name is not None and entry.name == name
+            row.spinner.set_visible(busy)
+            row.icon.set_visible(not busy)
 
     def _filter(self, entry_widget) -> None:
         query = entry_widget.get_text().strip().lower()
@@ -171,7 +189,6 @@ class PresetsDialog(Adw.Dialog):
             self.toasts.add_toast(Adw.Toast(title="Connect the amp to load presets."))
             return
         self.window.load_preset(preset, name)
-        self.toasts.add_toast(Adw.Toast(title=f"Loaded {name}", timeout=3))
 
     def show_original_saved(self) -> None:
         self.banner.set_revealed(True)

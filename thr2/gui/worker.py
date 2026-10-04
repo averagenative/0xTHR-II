@@ -187,7 +187,14 @@ class AmpWorker(threading.Thread):
             if keep_backup:
                 backup = thrl6p.from_patch(current, "Tone before presets", firmware=self.thr.firmware)
         LOG.info("Loading preset %r%s", name, f", keeping {sorted(p for _, p in hold)}" if hold else "")
-        skipped = thrl6p.apply(self.thr, preset, hold, current)
+        def progress(done: int, total: int) -> None:
+            GLib.idle_add(self._on_result, "progress", name, done, total)
+
+        try:
+            skipped = thrl6p.apply(self.thr, preset, hold, current, progress)
+        except Exception:
+            GLib.idle_add(self._on_result, "failed", name)
+            raise
         if skipped:
             LOG.debug("Not accepted: %s", skipped)
         self._refresh_requested = True

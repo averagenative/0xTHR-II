@@ -291,7 +291,7 @@ class THR:
         body = words(ukey, self.key(param), TYPE_FLOAT, float_word(value))
         return self.command(0, 0x0A, body).ok
 
-    def batch(self, steps: list[tuple], window: int = 6) -> list[str]:
+    def batch(self, steps: list[tuple], window: int = 6, progress=None) -> list[str]:
         """Send several changes, a few at a time, without waiting for each answer.
 
         Each step is ("type", unit, symbol) or ("param", unit, param, value). Answers come
@@ -319,6 +319,8 @@ class THR:
             for step, _opcode, _body in chunk:
                 if not self._await_answer(0, timeout=2.0).ok:
                     notes.append(f"{step[1]} {step[2]}: not accepted")
+            if progress:
+                progress(min(i + window, len(bodies)), len(bodies))
         LOG.info("Sent %d changes in %.0f ms", len(bodies), (time.monotonic() - started) * 1000)
         return notes
 
