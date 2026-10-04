@@ -108,6 +108,14 @@ Read with opcode `0x0D` and write with `0x0E`. The answer is a status word, a ty
 - Global `USBOutLevel` and system setting `0x09` both accept dB values (for example +6 and -6) and read them back. Neither has a confirmed effect on the recorded guitar level yet; idle-hiss measurements near the 16-bit floor were too noisy. Testing needs a steady played note.
 - Global `UsbEchoBackEnable` loops USB playback into the USB capture. The loop joins before the AUDIO knob, and `USBOutLevel` doesn't scale it.
 
+## Bluetooth LE (verified)
+
+- The THR30II Wireless advertises as `LE_THRII` with the BLE-MIDI service `03b80e5a-ede8-4b33-a751-6ce34ec4c700`.
+- Its MIDI I/O characteristic reports the 16-bit UUID `0x6BF3` instead of `7772e5db-3868-4112-a1a9-f2669d106bf3`, with flags read, write, write-without-response, and notify.
+- The SysEx protocol is identical to USB, wrapped in BLE-MIDI packets (header byte, timestamp before F0 and F7). A notification carried about 55 bytes on the test laptop.
+- A parameter write takes about 134 ms round trip over Bluetooth.
+- Firmware 1.40.0a reported 0.0 for the amp knobs and the Guitar, Audio, and input-gain globals over Bluetooth while the USB cable was out, with the raw dump structure intact. Whether that reflects the amp's real state is unconfirmed.
+
 ## Open questions
 
 - Does DI mode survive a power cycle?

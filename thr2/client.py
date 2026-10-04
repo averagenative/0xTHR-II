@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .device import RawMidi
+from .device import RawMidi, open_transport
 from .patch import Patch, parse_patch
 from .sysex import (
     IDENTITY_REQUEST, Frame, float_word, parse_identity, unpack_words, word_float, words,
@@ -117,8 +117,8 @@ class THR:
     _counters: dict = field(default_factory=lambda: {0: 0, 1: 0})
 
     @classmethod
-    def open(cls, path: str | None = None, load_symbols: bool = True) -> THR:
-        thr = cls(RawMidi(path))
+    def open(cls, path: str | None = None, load_symbols: bool = True, via: str = "auto") -> THR:
+        thr = cls(RawMidi(path) if path else open_transport(via))
         thr.connect(load_symbols=load_symbols)
         return thr
 
@@ -150,6 +150,7 @@ class THR:
             if self.identity:
                 break
         if not self.identity:
+            self.midi.close()
             raise THRError("No identity reply. The amp may be off or in firmware-update mode.")
         self._drain(0.3)
 

@@ -43,11 +43,19 @@ class AmpWorker(threading.Thread):
         self._pending: dict = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        self._wake = threading.Event()
+        self._force_bluetooth = False
         self._refresh_requested = False
         self.thr: THR | None = None
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
+
+    def connect_bluetooth(self) -> None:
+        """Ask BlueZ to connect a paired amp on the next attempt, then try right away."""
+        self._force_bluetooth = True
+        self._wake.set()
 
     def set_param(self, unit: str, param: str, value: float) -> None:
         with self._lock:
@@ -60,7 +68,8 @@ class AmpWorker(threading.Thread):
         while not self._stop.is_set():
             if self.thr is None:
                 if not self._connect():
-                    self._stop.wait(2.0)
+                    self._wake.wait(2.0)
+                    self._wake.clear()
                     continue
             try:
                 self._flush_params()
@@ -78,18 +87,19 @@ class AmpWorker(threading.Thread):
             self.thr.close()
 
     def _connect(self) -> bool:
+        via, self._force_bluetooth = ("bluetooth" if self._force_bluetooth else "auto"), False
         try:
-            self.thr = THR.open()
+            self.thr = THR.open(via=via)
         except (DeviceNotFound, THRError, OSError) as err:
             self.thr = None
             GLib.idle_add(self._on_status, False, str(err))
             return False
-        GLib.idle_add(self._on_status, True, "")
+        GLib.idle_add(self._on_status, True, self.thr.midi.kind)
         self._refresh()
         return True
 
     def _device_gone(self) -> bool:
-        return self.thr is None or not os.path.exists(self.thr.midi.path)
+        return self.thr is None or not self.thr.midi.alive()
 
     def _disconnect(self, reason: str) -> None:
         try:

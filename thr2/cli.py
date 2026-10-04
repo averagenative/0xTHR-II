@@ -28,7 +28,7 @@ def pct(value: object, name: str = "") -> str:
 
 
 def cmd_info(thr: THR, args) -> None:
-    print(f"Device    {thr.identity.get('version')} on {thr.midi.path}")
+    print(f"Device    {thr.identity.get('version')} over {thr.midi.kind} ({thr.midi.path})")
     print(f"Firmware  {thr.firmware_text}  ({len(thr.symbols)} symbols)")
     print("System settings:")
     for name in SYSTEM_SETTINGS:
@@ -222,7 +222,9 @@ def cmd_symbols(thr: THR, args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="thr2", description="Control a Yamaha THR-II amp over USB.")
+    parser = argparse.ArgumentParser(prog="thr2", description="Control a Yamaha THR-II amp over USB or Bluetooth.")
+    parser.add_argument("--via", choices=("auto", "usb", "bluetooth"), default="auto",
+                        help="Connection to use. auto prefers USB, then a connected Bluetooth amp.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("info", help="Show firmware, system settings, volumes, and preset names")
@@ -293,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         cmd_presets(args)
         return 0
     try:
-        with THR.open() as thr:
+        with THR.open(via=args.via) as thr:
             COMMANDS[args.command](thr, args)
     except (DeviceNotFound, THRError) as err:
         print(f"thr2: {err}", file=sys.stderr)

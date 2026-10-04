@@ -35,6 +35,8 @@ def find_thr_midi() -> tuple[str, str]:
 class RawMidi:
     """Full-duplex rawmidi with a reader thread that splits the byte stream into SysEx messages."""
 
+    kind = "USB"
+
     def __init__(self, path: str | None = None):
         self.path = path or find_thr_midi()[0]
         self.fd = os.open(self.path, os.O_RDWR | os.O_NONBLOCK)
@@ -81,6 +83,9 @@ class RawMidi:
                         self.messages.put(bytes(pending))
                         in_sysex = False
 
+    def alive(self) -> bool:
+        return os.path.exists(self.path) and self._reader.is_alive()
+
     def close(self) -> None:
         self._stop.set()
         self._reader.join(timeout=1)
@@ -91,3 +96,33 @@ class RawMidi:
 
     def __exit__(self, *exc) -> None:
         self.close()
+
+
+def open_transport(via: str = "auto"):
+    """Open the amp over USB or Bluetooth.
+
+    ``auto`` prefers USB. Without USB it uses a paired THR-II Wireless over Bluetooth,
+    asking BlueZ to connect it if needed. ``usb`` and ``bluetooth`` force one or the other.
+    """
+    usb_error = None
+    if via in ("auto", "usb"):
+        try:
+            return RawMidi()
+        except DeviceNotFound as err:
+            if via == "usb":
+                raise
+            usb_error = err
+    try:
+        from .ble import BleMidi, find_thr
+    except ImportError:
+        raise DeviceNotFound("No THR-II on USB, and Bluetooth needs PyGObject.") from usb_error
+    info = find_thr()
+    if info is None:
+        raise DeviceNotFound("Turn the amp on and connect it with a USB cable, or pair a THR-II Wireless "
+                             "in Bluetooth settings.")
+    try:
+        return BleMidi(info, connect_timeout=8.0)
+    except Exception as err:
+        state = "connected" if info["connected"] else "paired but not reachable"
+        raise DeviceNotFound(f"{info['name']} is {state} over Bluetooth. Turn the amp on, or plug in a "
+                             f"USB cable. ({err})") from err

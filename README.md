@@ -1,6 +1,6 @@
 # 0xTHR-II
 
-Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II Wireless) over USB. Yamaha's THR Remote app only runs on Windows, macOS, iOS, and Android. This project talks to the amp's USB MIDI port directly, so you can read and change its settings from Linux, including switching the USB recording output to the dry guitar signal.
+Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II Wireless) over USB or Bluetooth. Yamaha's THR Remote app only runs on Windows, macOS, iOS, and Android. This project talks to the amp's USB MIDI port directly, so you can read and change its settings from Linux, including switching the USB recording output to the dry guitar signal.
 
 **Status:** working prototype with a GTK4 app and a command-line tool. Tested on a THR30II Wireless running firmware 1.40.0a on Fedora 44.
 
@@ -87,6 +87,14 @@ python3 -m thr2 save "My crunch"
 
 To install the `thr2` command for your user, run `pip install --user -e .` in this directory.
 
+## Bluetooth
+
+THR-II Wireless amps also take control over Bluetooth LE. Pair the amp once in GNOME's Bluetooth settings (it appears as `LE_THRII`). After that, the app uses USB when the cable is plugged in and Bluetooth otherwise, and connects the amp by itself; the window title shows which one is active. The command-line tool does the same, or takes `--via usb` or `--via bluetooth`.
+
+Bluetooth carries control only. Recording through the amp still needs the USB cable. Only one program can control the amp over Bluetooth at a time, so close THR Remote on a phone first.
+
+The amp's MIDI characteristic reports the short UUID `0x6BF3` instead of the standard BLE-MIDI one, so PipeWire's built-in BLE-MIDI support doesn't pick it up. `thr2/ble.py` talks to it directly through BlueZ.
+
 ## Recording through the THR
 
 The THR30II Wireless USB audio interface is UAC1 at full speed: 2 channels in and 2 out, 16-bit, at 44.1 or 48 kHz, with asynchronous clocking. Both the processed and the dry signal travel on the same two channels, so you record one or the other. Use `thr2 di on` to record a dry DI track for reamping with NAM or other plugins, and `thr2 di off` to record the amp's own tone.
@@ -97,7 +105,8 @@ The amp's GUITAR knob doesn't affect the USB level, and turning on the tuner mut
 
 | Module | Role |
 |---|---|
-| `thr2/device.py` | Finds the amp's raw MIDI node and splits incoming bytes into SysEx messages on a reader thread |
+| `thr2/device.py` | Finds the amp's raw MIDI node and splits incoming bytes into SysEx messages on a reader thread; picks USB or Bluetooth |
+| `thr2/ble.py` | Bluetooth LE MIDI transport through BlueZ, with BLE-MIDI packet framing |
 | `thr2/sysex.py` | Line 6 SysEx framing: headers, frame counters, and 7-bit "bitbucket" coding |
 | `thr2/client.py` | Unlock, symbol table, queries, parameter changes, and change events |
 | `thr2/patch.py` | Parser for patch dumps (the current tone or a stored user memory) |

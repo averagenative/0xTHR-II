@@ -170,6 +170,7 @@ class THRWindow(Adw.ApplicationWindow):
         self.monitor: LevelMonitor | None = None
         self._meter_timer = 0
         self._connected = False
+        self.transport = "USB"
         self.presets_dialog: PresetsDialog | None = None
         self.original_tone: dict | None = None
 
@@ -234,8 +235,14 @@ class THRWindow(Adw.ApplicationWindow):
         self.waiting = Adw.StatusPage(
             icon_name="audio-speakers-symbolic",
             title="Connect your THR-II",
-            description="Turn the amp on and connect it with a USB cable. This window finds it automatically.",
+            description="Turn the amp on and connect it with a USB cable, or connect a THR-II Wireless in "
+                        "Bluetooth settings. This window finds it automatically.",
         )
+        bt_button = Gtk.Button(label="Connect over Bluetooth", halign=Gtk.Align.CENTER)
+        bt_button.add_css_class("pill")
+        bt_button.add_css_class("suggested-action")
+        bt_button.connect("clicked", self._connect_bluetooth)
+        self.waiting.set_child(bt_button)
         self.stack.add_named(self.waiting, "waiting")
         self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
                                            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
@@ -285,6 +292,10 @@ class THRWindow(Adw.ApplicationWindow):
                     self.presets_dialog.show_original_saved()
         elif kind == "saved" and self.presets_dialog:
             self.presets_dialog.saved(args[0])
+
+    def _connect_bluetooth(self, _button) -> None:
+        self.waiting.set_description("Connecting over Bluetooth...")
+        self.worker.connect_bluetooth()
 
     def _on_close(self, *_args):
         self._stop_meter()
@@ -488,15 +499,16 @@ class THRWindow(Adw.ApplicationWindow):
     def _on_status(self, connected: bool, message: str) -> None:
         self._connected = connected
         if connected:
-            self.title_widget.set_subtitle("Connecting")
+            self.transport = message or "USB"
+            self.title_widget.set_subtitle(f"Connecting over {self.transport}")
             return
         self._stop_meter()
         self.stack.set_visible_child_name("waiting")
         self.usb_toggle.set_sensitive(False)
         self.title_widget.set_title("THR-II")
         self.title_widget.set_subtitle("Not connected")
-        if message and "No THR-II" not in message:
-            self.waiting.set_description(f"{message}\nRetrying every few seconds.")
+        if message:
+            self.waiting.set_description(message)
 
     def _on_error(self, message: str) -> None:
         self.toasts.add_toast(Adw.Toast(title=message, timeout=4))
@@ -510,7 +522,7 @@ class THRWindow(Adw.ApplicationWindow):
         model = MODELS.get(state.identity.get("model"), "THR-II")
         edited = ", edited" if state.system.get("user_setting_changed") else ""
         self.title_widget.set_title(patch.name or model)
-        self.title_widget.set_subtitle(f"{model}, firmware {state.firmware}{edited}")
+        self.title_widget.set_subtitle(f"{model}, firmware {state.firmware}, {self.transport}{edited}")
 
         amp = patch.find("Amp")
         if amp:
