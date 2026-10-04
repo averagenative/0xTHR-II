@@ -8,6 +8,7 @@ always moves by the finest step.
 from __future__ import annotations
 
 import math
+import weakref
 
 import cairo
 import gi
@@ -16,6 +17,11 @@ gi.require_version("Adw", "1")
 gi.require_version("Gtk", "4.0")
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Adw, Gdk, Gtk, PangoCairo  # noqa: E402
+
+from . import themes  # noqa: E402
+
+_KNOBS: weakref.WeakSet = weakref.WeakSet()
+themes.on_change(lambda _theme: [knob.dial.queue_draw() for knob in list(_KNOBS)])
 
 ARC_START = 0.75 * math.pi
 ARC_SWEEP = 1.5 * math.pi
@@ -43,6 +49,7 @@ class Knob(Gtk.Box):
         self._drag_start = self.lower
         self._scroll_acc = 0.0
         self.param = None
+        _KNOBS.add(self)
 
         self.dial = Gtk.DrawingArea(accessible_role=Gtk.AccessibleRole.SLIDER, focusable=True, focus_on_click=True)
         self.dial.set_content_width(size)
@@ -137,30 +144,69 @@ class Knob(Gtk.Box):
         return True
 
     def _draw(self, area, cr, width, height) -> None:
+        style = themes.current().knob
         cx, cy = width / 2, height / 2
         radius = min(width, height) / 2 - 5
         fg = area.get_color()
         accent = Adw.StyleManager.get_default().get_accent_color_rgba()
+        track = style.track or (fg.red, fg.green, fg.blue, 0.15)
+        arc = style.arc or (accent.red, accent.green, accent.blue, 1.0)
+        text = style.text or (fg.red, fg.green, fg.blue)
+        fraction = (self.value - self.lower) / (self.upper - self.lower)
+        end = ARC_START + ARC_SWEEP * fraction
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        cr.set_line_width(5)
-        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.15)
+
+        ring = 5 if style.kind == "arc" else 3
+        cr.set_line_width(ring)
+        cr.set_source_rgba(*track)
         cr.arc(cx, cy, radius, ARC_START, ARC_START + ARC_SWEEP)
         cr.stroke()
-        fraction = (self.value - self.lower) / (self.upper - self.lower)
         if fraction > 0.001:
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, 1.0)
-            cr.arc(cx, cy, radius, ARC_START, ARC_START + ARC_SWEEP * fraction)
+            if style.glow:
+                cr.set_line_width(ring + 6)
+                cr.set_source_rgba(arc[0], arc[1], arc[2], 0.22)
+                cr.arc(cx, cy, radius, ARC_START, end)
+                cr.stroke()
+                cr.set_line_width(ring)
+            cr.set_source_rgba(*arc)
+            cr.arc(cx, cy, radius, ARC_START, end)
             cr.stroke()
+
+        font = area.get_pango_context().get_font_description().copy()
+        if style.kind == "cap":
+            cap = radius * 0.74
+            gradient = cairo.RadialGradient(cx - cap * 0.35, cy - cap * 0.4, cap * 0.1, cx, cy, cap)
+            gradient.add_color_stop_rgb(0, *style.cap_hi)
+            gradient.add_color_stop_rgb(1, *style.cap_lo)
+            cr.set_source(gradient)
+            cr.arc(cx, cy, cap, 0, 2 * math.pi)
+            cr.fill_preserve()
+            cr.set_source_rgb(*style.rim)
+            cr.set_line_width(1)
+            cr.stroke()
+            cr.set_source_rgb(*style.pointer)
+            cr.set_line_width(2.5)
+            cr.move_to(cx + math.cos(end) * cap * 0.62, cy + math.sin(end) * cap * 0.62)
+            cr.line_to(cx + math.cos(end) * cap * 0.94, cy + math.sin(end) * cap * 0.94)
+            cr.stroke()
+            font.set_size(int(font.get_size() * (0.62 if width < 56 else 0.78)))
+            layout = area.create_pango_layout(self.text())
+            layout.set_font_description(font)
+            tw, th = layout.get_pixel_size()
+            cr.set_source_rgb(*style.pointer)
+            cr.move_to(cx - tw / 2, cy - th / 2)
+            PangoCairo.show_layout(cr, layout)
+        else:
+            font.set_size(int(font.get_size() * (0.8 if width < 56 else 1.0)))
+            layout = area.create_pango_layout(self.text())
+            layout.set_font_description(font)
+            tw, th = layout.get_pixel_size()
+            cr.set_source_rgba(text[0], text[1], text[2], 0.9)
+            cr.move_to(cx - tw / 2, cy - th / 2)
+            PangoCairo.show_layout(cr, layout)
+
         if area.has_focus():
             cr.set_line_width(2)
-            cr.set_source_rgba(accent.red, accent.green, accent.blue, 0.5)
+            cr.set_source_rgba(arc[0], arc[1], arc[2], 0.5)
             cr.arc(cx, cy, radius + 4, 0, 2 * math.pi)
             cr.stroke()
-        layout = area.create_pango_layout(self.text())
-        font = area.get_pango_context().get_font_description().copy()
-        font.set_size(int(font.get_size() * (0.8 if width < 56 else 1.0)))
-        layout.set_font_description(font)
-        tw, th = layout.get_pixel_size()
-        cr.set_source_rgba(fg.red, fg.green, fg.blue, 0.9)
-        cr.move_to(cx - tw / 2, cy - th / 2)
-        PangoCairo.show_layout(cr, layout)

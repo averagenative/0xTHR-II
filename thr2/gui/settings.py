@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 PATH = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "thr2" / "settings.json"
-DEFAULTS = {"knob_step": 2, "keep_knobs": True}
+DEFAULTS = {"knob_step": 2, "keep_knobs": True, "theme": "adwaita"}
 
 
 def load() -> dict:

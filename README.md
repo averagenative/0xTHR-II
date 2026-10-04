@@ -26,6 +26,8 @@ The window mirrors the amp: turn a knob on the amp and the matching knob in the 
 
 Each knob responds to dragging, the scroll wheel, and the arrow keys. **Knob step** sets how far one scroll notch or arrow-key press moves a knob: 1, 2, 5, or 10 (in dB for the gate threshold). Hold Shift to move by 1 without changing the setting. Page Up and Page Down move ten steps. The app remembers the step in `~/.config/thr2/settings.json`.
 
+The palette button in the header bar picks a theme: the three THR-II finishes (**THR30II Cream**, **THR30II White**, and **THR30II Black**, with knob caps and the Y-pattern speaker grille), **Neon**, **Bare Metal**, or **Adwaita**, which follows your desktop's light or dark style and accent color. The app remembers your choice.
+
 The **Recording level** panel shows what your computer records over USB, with a peak readout and a **Clipped** warning that stays lit until you click it. With headphones plugged into the amp, the **Guitar** knob (the amp's GUITAR knob) only changes what you hear, so you can set the recording level with **Master** and then turn **Guitar** down to a comfortable level. The meter reads the amp's PipeWire capture alongside REAPER, so it doesn't interrupt a recording.
 
 Changing the amp model on a THR-II resets gain, master, and the tone controls to 50, which can be a sudden jump in volume. The app keeps your knob settings across amp changes unless you clear **Keep knobs when changing amps**. Changing an effect's model loads that model's default settings.
@@ -107,6 +109,7 @@ The amp's GUITAR knob doesn't affect the USB level, and turning on the tuner mut
 | `thr2/gui/knob.py` | Rotary knob control with drag, scroll, and keyboard input and a shared step setting |
 | `thr2/gui/settings.py` | Per-user preferences |
 | `thr2/gui/presets.py` | The preset browser |
+| `thr2/gui/themes.py` | Themes: libadwaita color variables, extra CSS, knob styles, and the generated grille texture |
 | `thr2/gui/meter.py` | USB recording level meter: `pipewiresrc ! level`, pinned to the amp's capture node with fallback disabled |
 
 The amp ignores commands until a client unlocks its MIDI interface with a firmware-specific key. After that, every unit, parameter, and amp model is a number that indexes the amp's own symbol table. Those numbers change between firmware versions, so the client downloads the table on first connect and caches it in `~/.cache/thr2/`. See `docs/protocol.md` for the details.

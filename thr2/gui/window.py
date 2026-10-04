@@ -6,10 +6,10 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from ..client import AMP_NAMES, CABINETS  # noqa: E402
-from . import settings  # noqa: E402
+from . import settings, themes  # noqa: E402
 from .knob import Knob, StepSetting  # noqa: E402
 from .. import library, thrl6p  # noqa: E402
 from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
@@ -173,6 +173,14 @@ class THRWindow(Adw.ApplicationWindow):
         self.presets_dialog: PresetsDialog | None = None
         self.original_tone: dict | None = None
 
+        self.add_css_class("thr2-window")
+        theme_id = self.prefs.get("theme", "adwaita")
+        themes.manager().apply(theme_id)
+        theme_action = Gio.SimpleAction.new_stateful(
+            "theme", GLib.VariantType.new("s"), GLib.Variant("s", themes.current().id))
+        theme_action.connect("change-state", self._theme_changed)
+        self.add_action(theme_action)
+
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
         header = Adw.HeaderBar()
@@ -190,6 +198,18 @@ class THRWindow(Adw.ApplicationWindow):
         usb_box.append(usb_label)
         usb_box.append(self.usb_toggle)
         header.pack_end(usb_box)
+
+        menu = Gio.Menu()
+        amps, looks = Gio.Menu(), Gio.Menu()
+        for theme in themes.THEMES:
+            item = Gio.MenuItem.new(theme.name, None)
+            item.set_action_and_target_value("win.theme", GLib.Variant("s", theme.id))
+            (amps if theme.id in ("cream", "white", "black") else looks).append_item(item)
+        menu.append_section("Amp finishes", amps)
+        menu.append_section("Other looks", looks)
+        theme_button = Gtk.MenuButton(icon_name="applications-graphics-symbolic", menu_model=menu,
+                                      tooltip_text="Theme")
+        header.pack_end(theme_button)
 
         step_box = Gtk.Box(spacing=6)
         step_label = Gtk.Label(label="Knob step")
@@ -219,6 +239,7 @@ class THRWindow(Adw.ApplicationWindow):
         self.stack.add_named(self.waiting, "waiting")
         self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
                                            vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
+        self.scroller.add_css_class("thr2-scroller")
         self.panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, valign=Gtk.Align.START,
                              margin_top=14, margin_bottom=16, margin_start=16, margin_end=16)
         self.scroller.set_child(self.panel)
@@ -269,6 +290,12 @@ class THRWindow(Adw.ApplicationWindow):
         self._stop_meter()
         self.worker.stop()
         return False
+
+    def _theme_changed(self, action, value) -> None:
+        action.set_state(value)
+        theme = themes.manager().apply(value.get_string())
+        self.prefs["theme"] = theme.id
+        settings.save(self.prefs)
 
     def _step_changed(self, group, _pspec) -> None:
         name = group.get_active_name()
