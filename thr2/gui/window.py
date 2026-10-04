@@ -6,9 +6,10 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 from ..client import AMP_NAMES, CABINETS  # noqa: E402
+from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
 
 MODELS = {0: "THR10II", 1: "THR10II Wireless", 2: "THR30II Wireless", 3: "THR30IIA Wireless"}
@@ -93,8 +94,8 @@ class EffectSlot:
 
         self.mix_row = SliderRow("Mix", lambda v: window.worker.set_param("GuitarProc", f"{unit}Mix", v))
         self.row.add_row(self.mix_row)
-        window.bindings[("GuitarProc", f"{unit}Mix")] = self.mix_row.set_wire_value
-        window.bindings[("GuitarProc", f"{unit}Enable")] = self.set_enabled
+        window.bind(("GuitarProc", f"{unit}Mix"), self.mix_row.set_wire_value)
+        window.bind(("GuitarProc", f"{unit}Enable"), self.set_enabled)
 
     def _enable_changed(self, row, _pspec) -> None:
         if not self._syncing:
@@ -146,7 +147,7 @@ class EffectSlot:
             row.set_wire_value(value)
             self.row.add_row(row)
             self.param_rows.append(row)
-            self.window.bindings[(self.unit, param)] = row.set_wire_value
+            self.window.bind((self.unit, param), row.set_wire_value)
         if len(self.types) > 1:
             self.row.set_subtitle(dict(self.types).get(unit.type, unit.type))
 
@@ -159,6 +160,9 @@ class THRWindow(Adw.ApplicationWindow):
         self._built = False
         self._on_first_state = on_first_state
         self.state: AmpState | None = None
+        self.monitor: LevelMonitor | None = None
+        self._meter_timer = 0
+        self._connected = False
 
         self.toasts = Adw.ToastOverlay()
         view = Adw.ToolbarView()
@@ -197,10 +201,86 @@ class THRWindow(Adw.ApplicationWindow):
         self.worker.start()
 
     def _on_close(self, *_args):
+        self._stop_meter()
         self.worker.stop()
         return False
 
+    def bind(self, key, update) -> None:
+        self.bindings.setdefault(key, []).append(update)
+
+    def _build_levels(self) -> None:
+        levels = Adw.PreferencesGroup(
+            title="Levels",
+            description="The meter shows what REAPER and other recorders receive over USB. "
+                        "Aim for peaks between -12 and -6 dB.",
+        )
+        meter_row = Adw.PreferencesRow(activatable=False, title="USB recording level")
+        box = Gtk.Box(spacing=12, margin_top=10, margin_bottom=8, margin_start=12, margin_end=12)
+        self.meter = LevelMeter()
+        box.append(self.meter)
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.CENTER)
+        self.peak_label = Gtk.Label(label="Peak --", xalign=1, width_chars=12)
+        self.peak_label.add_css_class("numeric")
+        self.peak_label.add_css_class("caption")
+        self.clip_button = Gtk.Button(label="Clipped", visible=False, tooltip_text="The recording hit full scale. Click to reset.")
+        self.clip_button.add_css_class("destructive-action")
+        self.clip_button.add_css_class("pill")
+        self.clip_button.connect("clicked", lambda b: b.set_visible(False))
+        side.append(self.peak_label)
+        side.append(self.clip_button)
+        box.append(side)
+        meter_row.set_child(box)
+        levels.add(meter_row)
+
+        def master_changed(value):
+            self.worker.set_param("Amp", "Master", value)
+            for row in self.master_rows:
+                row.set_wire_value(value)
+
+        self.levels_master = SliderRow("Master", master_changed)
+        self.levels_master.set_subtitle("Raises the recording level")
+        self.master_changed = master_changed
+        levels.add(self.levels_master)
+        self.guitar_vol = SliderRow("Guitar volume", lambda v: self.worker.set_param("global", "GuitarVolume", v))
+        self.guitar_vol.set_subtitle("Headphones and speakers only")
+        levels.add(self.guitar_vol)
+        self.bind(("global", "GuitarVolume"), self.guitar_vol.set_wire_value)
+        self.page.add(levels)
+
+    def _start_meter_polling(self) -> None:
+        if not self._meter_timer:
+            self._meter_timer = GLib.timeout_add_seconds(2, self._ensure_meter)
+        self._ensure_meter()
+
+    def _ensure_meter(self) -> bool:
+        if not self._connected:
+            self._meter_timer = 0
+            return GLib.SOURCE_REMOVE
+        if self.monitor is None:
+            node = find_capture_node()
+            if node:
+                self.monitor = LevelMonitor(node, self._on_level, self._on_meter_stopped)
+        return GLib.SOURCE_CONTINUE
+
+    def _on_level(self, peaks, holds) -> None:
+        self.meter.set_levels(peaks, holds)
+        hold = max(holds) if holds else DB_MIN
+        self.peak_label.set_label(f"Peak {hold:.1f} dB" if hold > DB_MIN else "Peak below -60 dB")
+        if max(peaks, default=DB_MIN) >= CLIP_DB:
+            self.clip_button.set_visible(True)
+
+    def _on_meter_stopped(self) -> None:
+        self.monitor = None
+        self.meter.reset()
+        self.peak_label.set_label("Peak --")
+
+    def _stop_meter(self) -> None:
+        if self.monitor:
+            self.monitor.stop()
+        self._on_meter_stopped()
+
     def _build(self) -> None:
+        self._build_levels()
         amp = Adw.PreferencesGroup(title="Amp")
         self.category_row = Adw.ComboRow(title="Amp", model=Gtk.StringList.new(CATEGORIES))
         self.category_row.connect("notify::selected", self._amp_changed)
@@ -224,14 +304,19 @@ class THRWindow(Adw.ApplicationWindow):
         self.cab_row = Adw.ComboRow(title="Cabinet", model=Gtk.StringList.new(CABINETS))
         self.cab_row.connect("notify::selected", self._cab_changed)
         amp.add(self.cab_row)
-        self.bindings[("GuitarProc", "SpkSimType")] = self._set_cab
+        self.bind(("GuitarProc", "SpkSimType"), self._set_cab)
 
         self.amp_rows = {}
         for param, label in AMP_KNOBS:
-            row = SliderRow(label, lambda v, p=param: self.worker.set_param("Amp", p, v))
+            if param == "Master":
+                row = SliderRow(label, self.master_changed)
+            else:
+                row = SliderRow(label, lambda v, p=param: self.worker.set_param("Amp", p, v))
             amp.add(row)
             self.amp_rows[param] = row
-            self.bindings[("Amp", param)] = row.set_wire_value
+            self.bind(("Amp", param), row.set_wire_value)
+        self.master_rows = [self.amp_rows["Master"], self.levels_master]
+        self.bind(("Amp", "Master"), self.levels_master.set_wire_value)
         self.page.add(amp)
 
         effects = Adw.PreferencesGroup(
@@ -250,24 +335,21 @@ class THRWindow(Adw.ApplicationWindow):
         self.gate_row = Adw.SwitchRow(title="Noise gate")
         self.gate_row.connect("notify::active", self._gate_changed)
         gate.add(self.gate_row)
-        self.bindings[("GuitarProc", "GateEnable")] = self._set_gate
+        self.bind(("GuitarProc", "GateEnable"), self._set_gate)
         self.thresh_row = SliderRow("Threshold", lambda v: self.worker.set_param("GuitarProc", "Thresh", v),
                                     lower=-96, upper=0, raw=True, unit=" dB")
         self.decay_row = SliderRow("Release", lambda v: self.worker.set_param("GuitarProc", "Decay", v))
         gate.add(self.thresh_row)
         gate.add(self.decay_row)
-        self.bindings[("GuitarProc", "Thresh")] = self.thresh_row.set_wire_value
-        self.bindings[("GuitarProc", "Decay")] = self.decay_row.set_wire_value
+        self.bind(("GuitarProc", "Thresh"), self.thresh_row.set_wire_value)
+        self.bind(("GuitarProc", "Decay"), self.decay_row.set_wire_value)
         self.page.add(gate)
 
         output = Adw.PreferencesGroup(title="Output")
-        self.guitar_vol = SliderRow("Guitar volume", lambda v: self.worker.set_param("global", "GuitarVolume", v))
         self.audio_vol = SliderRow("Computer and Bluetooth audio",
                                    lambda v: self.worker.set_param("global", "AudioVolume", v))
-        output.add(self.guitar_vol)
         output.add(self.audio_vol)
-        self.bindings[("global", "GuitarVolume")] = self.guitar_vol.set_wire_value
-        self.bindings[("global", "AudioVolume")] = self.audio_vol.set_wire_value
+        self.bind(("global", "AudioVolume"), self.audio_vol.set_wire_value)
         self.stereo_row = Adw.SwitchRow(title="Extended stereo",
                                         subtitle="Widens the reverb and computer or Bluetooth playback")
         self.stereo_row.connect("notify::active", self._stereo_changed)
@@ -290,9 +372,12 @@ class THRWindow(Adw.ApplicationWindow):
         self._built = True
 
     def _on_status(self, connected: bool, message: str) -> None:
+        self._connected = connected
         if connected:
             self.title_widget.set_subtitle("Connecting")
             return
+        if self._built:
+            self._stop_meter()
         self.stack.set_visible_child_name("waiting")
         self.usb_toggle.set_sensitive(False)
         self.title_widget.set_title("THR-II")
@@ -322,6 +407,7 @@ class THRWindow(Adw.ApplicationWindow):
                 self.character.set_active_name(pair[1])
             for param, row in self.amp_rows.items():
                 row.set_wire_value(amp.params.get(f"{param}State"))
+            self.levels_master.set_wire_value(amp.params.get("MasterState"))
         proc = patch.find("GuitarProc")
         if proc:
             self._set_cab(proc.params.get("SpkSimTypeState"))
@@ -343,16 +429,17 @@ class THRWindow(Adw.ApplicationWindow):
             row.set_subtitle("Active" + (", edited" if edited else "") if i == active else "")
         self._syncing = False
         self.stack.set_visible_child_name("amp")
+        self._start_meter_polling()
         if self._on_first_state:
             callback, self._on_first_state = self._on_first_state, None
             callback(self)
 
     def _on_event(self, event) -> None:
-        update = self.bindings.get((event.unit, event.param))
-        if update:
-            self._syncing = True
+        updates = self.bindings.get((event.unit, event.param), [])
+        self._syncing = True
+        for update in updates:
             update(event.value)
-            self._syncing = False
+        self._syncing = False
         if self.state and not self.state.system.get("user_setting_changed"):
             self.state.system["user_setting_changed"] = 1
             self.title_widget.set_subtitle(self.title_widget.get_subtitle() + ", edited")

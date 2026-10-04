@@ -102,6 +102,12 @@ Read with opcode `0x0D` and write with `0x0E`. The answer is a status word, a ty
 | `0x0E` | Speaker tuner mode | 1 |
 | `0x0F` | Eco recharge | 1 |
 
+## USB levels
+
+- With headphones in the amp, the GUITAR knob (global `GuitarVolume`) sets the guitar level in the speakers and headphones only. At `GuitarVolume` 0 the USB capture still carries signal, which matches Yamaha's manual.
+- Global `USBOutLevel` and system setting `0x09` both accept dB values (for example +6 and -6) and read them back. Neither has a confirmed effect on the recorded guitar level yet; idle-hiss measurements near the 16-bit floor were too noisy. Testing needs a steady played note.
+- Global `UsbEchoBackEnable` loops USB playback into the USB capture. The loop joins before the AUDIO knob, and `USBOutLevel` doesn't scale it.
+
 ## Open questions
 
 - Does DI mode survive a power cycle?

@@ -8,14 +8,16 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 
 - Linux with ALSA. The amp shows up as a class-compliant USB audio and MIDI device; no driver needed.
 - Python 3.10 or later. The command-line tool needs no third-party packages.
-- For the app: GTK 4, libadwaita 1.7 or later, and PyGObject. Fedora Workstation includes all three.
+- For the app: GTK 4, libadwaita 1.7 or later, PyGObject, and GStreamer with the PipeWire plugin for the level meter. Fedora Workstation includes all of them.
 - No group membership. logind gives the logged-in user access to `/dev/snd/midiC*D*`.
 
 ## The app
 
 Run `make install` once to add **THR-II Control** to your GNOME app grid, or start it from this directory with `make gui`.
 
-The window mirrors the amp: turn a knob on the amp and the matching slider moves. It covers the amp model (category plus Modern, Boutique, or Classic character), cabinet, gain and tone, the four effects with their models and settings, the noise gate, the guitar and playback volumes, Extended Stereo, and the USB recording output (**Amp** or **Dry**) in the header bar. It reconnects by itself when you unplug or power-cycle the amp.
+The window mirrors the amp: turn a knob on the amp and the matching slider moves.
+
+The **Levels** section at the top shows what your computer records over USB, with a peak readout and a **Clipped** warning that stays lit until you click it. With headphones plugged into the amp, the GUITAR knob (**Guitar volume**) only changes what you hear, so you can set the recording level with **Master** and then turn **Guitar volume** down to a comfortable level. The meter reads the amp's PipeWire capture alongside REAPER, so it doesn't interrupt a recording. It covers the amp model (category plus Modern, Boutique, or Classic character), cabinet, gain and tone, the four effects with their models and settings, the noise gate, the guitar and playback volumes, Extended Stereo, and the USB recording output (**Amp** or **Dry**) in the header bar. It reconnects by itself when you unplug or power-cycle the amp.
 
 Changing the amp model on a THR-II resets gain, master, and the tone controls to 50, which can be a sudden jump in volume. The app keeps your knob settings across amp changes unless you turn off **Keep knob settings when changing amps**. Changing an effect's model loads that model's default settings.
 
@@ -70,6 +72,7 @@ The amp's GUITAR knob doesn't affect the USB level, and turning on the tuner mut
 | `thr2/cli.py` | The `thr2` command |
 | `thr2/gui/worker.py` | Background thread that owns the connection, coalesces slider moves, and forwards the amp's change reports |
 | `thr2/gui/window.py` | The libadwaita window |
+| `thr2/gui/meter.py` | USB recording level meter: `pipewiresrc ! level`, pinned to the amp's capture node with fallback disabled |
 
 The amp ignores commands until a client unlocks its MIDI interface with a firmware-specific key. After that, every unit, parameter, and amp model is a number that indexes the amp's own symbol table. Those numbers change between firmware versions, so the client downloads the table on first connect and caches it in `~/.cache/thr2/`. See `docs/protocol.md` for the details.
 
