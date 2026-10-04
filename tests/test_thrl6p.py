@@ -111,6 +111,20 @@ class PlanTest(unittest.TestCase):
             thrl6p.validate({"data": {}})
 
 
+class RenameTest(unittest.TestCase):
+    def test_rename_dump(self):
+        from thr2.patch import META, STRUCT_OPEN, TOKEN_META, parse_patch, rename_dump
+        import struct
+        name = b"USER MEMORY 1\x00"
+        dump = (STRUCT_OPEN + META + TOKEN_META + b"\x00\x00\x00\x00\x04\x00" + struct.pack("<I", len(name)) + name
+                + b"\x01\x00\x00\x00\x02\x00" + struct.pack("<I", 0))
+        renamed = rename_dump(dump, "Everlong")
+        patch = parse_patch(renamed, lambda k: f"s{k}")
+        self.assertEqual(patch.meta["name"], "Everlong")
+        self.assertEqual(patch.meta["tnid"], 0)
+        self.assertEqual(rename_dump(renamed, "USER MEMORY 1"), dump)
+
+
 class RoundTripTest(unittest.TestCase):
     def test_patch_to_preset_and_back(self):
         proc = Unit("GuitarProc", "Y2GuitarFlow", {

@@ -52,6 +52,20 @@ class ApplyStatus(Gtk.Revealer):
         self.bar.set_fraction(done / total if total else 0.0)
         self.set_reveal_child(True)
 
+    def busy(self, text: str) -> None:
+        self._cancel_hide()
+        self.spinner.set_visible(True)
+        self.bar.set_visible(False)
+        self.label.set_label(text)
+        self.set_reveal_child(True)
+
+    def done(self, text: str) -> None:
+        self.spinner.set_visible(False)
+        self.bar.set_visible(False)
+        self.label.set_label(text)
+        self.set_reveal_child(True)
+        self._hide_later(2500)
+
     def finish(self, name: str, total: int) -> None:
         self.spinner.set_visible(False)
         self.bar.set_fraction(1.0)

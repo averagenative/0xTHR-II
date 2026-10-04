@@ -120,3 +120,25 @@ def parse_patch(data: bytes, symbol: Callable[[int], str]) -> Patch:
             elif stack:
                 stack[-1].params[symbol(key)] = value
     return patch
+
+
+NAME_LIMIT = 64
+
+
+def rename_dump(dump: bytes, name: str) -> bytes:
+    """Return a copy of a raw patch dump with its name changed.
+
+    The name is the first value in the dump's meta section: a 2-byte key (0), the string
+    type marker, a 4-byte length including the trailing NUL, and UTF-8 bytes.
+    """
+    prefix = len(STRUCT_OPEN) + len(META) + len(TOKEN_META)
+    if dump[:6] != STRUCT_OPEN or dump[6:12] != META or dump[12:prefix] != TOKEN_META:
+        raise PatchError("Unexpected dump layout; can't rename it.")
+    key, vtype = _u16(dump, prefix), dump[prefix + 4]
+    if key != 0 or vtype != DUMP_STRING:
+        raise PatchError("The dump doesn't start with a name; can't rename it.")
+    old_len = _u32(dump, prefix + 6)
+    encoded = name.encode("utf-8")[:NAME_LIMIT - 1] + b"\x00"
+    head = dump[:prefix + 6]
+    tail = dump[prefix + 10 + old_len:]
+    return head + struct.pack("<I", len(encoded)) + encoded + tail

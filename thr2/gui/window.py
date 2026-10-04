@@ -327,6 +327,38 @@ class THRWindow(Adw.ApplicationWindow):
             self._on_state(dataclasses.replace(self.state, patch=predicted))
         self.worker.submit("load_preset", preset, name, keep_backup, hold)
 
+    def _ask_store(self, _button) -> None:
+        if not self.is_connected():
+            self.toasts.add_toast(Adw.Toast(title="Connect the amp to save a memory."))
+            return
+        names = [self.state.memory_names[i] or f"Memory {i + 1}" for i in range(5)]
+        active = self.state.system.get("user_setting") or 0
+        slot = Adw.ComboRow(title="Memory", model=Gtk.StringList.new([f"{i + 1}: {n}" for i, n in enumerate(names)]),
+                            selected=active if 0 <= active < 5 else 0)
+        name = Adw.EntryRow(title="Name", text=self.state.patch.name or names[active])
+        rows = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        rows.add_css_class("boxed-list")
+        rows.append(slot)
+        rows.append(name)
+        dialog = Adw.AlertDialog(heading="Save to a user memory",
+                                 body="This replaces the memory you pick on the amp with the current tone.",
+                                 extra_child=rows)
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("save", "Replace memory")
+        dialog.set_response_appearance("save", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def respond(_dialog, response):
+            if response == "save":
+                index = slot.get_selected()
+                self.log.info("Saving current tone to memory %d as %r", index + 1, name.get_text())
+                self._status("busy", f"Saving to memory {index + 1}...")
+                self.worker.submit("store_memory", index, name.get_text().strip())
+
+        dialog.connect("response", respond)
+        dialog.present(self)
+
     def _status(self, method: str, *args) -> None:
         getattr(self.apply_status, method)(*args)
         if self.presets_dialog:
@@ -349,6 +381,10 @@ class THRWindow(Adw.ApplicationWindow):
             self.apply_done, self.apply_total = done, total
             next_name = self.pending[1] if self.pending else None
             self._status("update", name, done, total, next_name)
+            return
+        if kind == "stored":
+            index, ok = args
+            self._status("done", f"Saved to memory {index + 1}" if ok else f"The amp didn't save memory {index + 1}. See Console.")
             return
         if kind == "failed":
             self._status("fail", args[0])
@@ -541,10 +577,14 @@ class THRWindow(Adw.ApplicationWindow):
         return outer
 
     def _build_memories(self) -> Gtk.Widget:
-        outer, body = card("User memories", tooltip="Loading a memory replaces your current settings")
+        save_button = Gtk.Button(label="Save current tone...", tooltip_text="Store the current tone in one of the amp's five memories")
+        save_button.add_css_class("suggested-action")
+        save_button.connect("clicked", self._ask_store)
+        outer, body = card("User memories", save_button, tooltip="Loading a memory replaces your current settings")
         outer.set_hexpand(True)
         row = Gtk.Box(spacing=8, homogeneous=True, vexpand=True, valign=Gtk.Align.CENTER)
-        hint = Gtk.Label(label="Loading a memory replaces your current settings.", xalign=0)
+        hint = Gtk.Label(label="Click a memory to load it. Save stores the current tone, like holding the amp's "
+                               "USER MEMORY button.", xalign=0, wrap=True)
         hint.add_css_class("caption")
         hint.add_css_class("dim-label")
         body.append(hint)

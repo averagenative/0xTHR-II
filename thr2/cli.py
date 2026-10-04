@@ -221,6 +221,22 @@ def cmd_presets(args) -> None:
         print(f"{e.source:9s} {e.name:42s} {amp}")
 
 
+def cmd_store(thr: THR, args) -> None:
+    from .patch import rename_dump
+    index = args.memory - 1
+    old_name = thr.patch_name(index)
+    dump = thr.dump_raw()
+    if args.name:
+        dump = rename_dump(dump, args.name)
+    if not args.yes:
+        answer = input(f"Replace user memory {args.memory} ({old_name!r}) with the current tone? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("Nothing saved.")
+            return
+    ok = thr.store_memory(index, dump)
+    print(f"Saved to user memory {args.memory} as {thr.patch_name(index)!r}" if ok else "The amp didn't accept the save.")
+
+
 def cmd_symbols(thr: THR, args) -> None:
     for i, name in enumerate(thr.symbols):
         if not args.filter or args.filter.lower() in name.lower():
@@ -279,6 +295,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("filter", nargs="?")
     p.add_argument("--update", action="store_true", help="Download the community collection again")
 
+    p = sub.add_parser("store", help="Save the current tone into one of the amp's user memories")
+    p.add_argument("memory", type=int, choices=range(1, 6), help="User memory 1 to 5 (overwritten)")
+    p.add_argument("--name", help="Name to store with it")
+    p.add_argument("-y", "--yes", action="store_true", help="Don't ask for confirmation")
+
     p = sub.add_parser("symbols", help="List the amp's symbol table")
     p.add_argument("filter", nargs="?")
     return parser
@@ -286,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 COMMANDS = {
     "info": cmd_info, "dump": cmd_dump, "monitor": cmd_monitor, "set": cmd_set,
-    "amp": cmd_amp, "cab": cmd_cab, "system": cmd_system, "di": cmd_di, "fx": cmd_fx, "load": cmd_load, "save": cmd_save, "symbols": cmd_symbols,
+    "amp": cmd_amp, "cab": cmd_cab, "system": cmd_system, "di": cmd_di, "fx": cmd_fx, "load": cmd_load, "save": cmd_save, "store": cmd_store, "symbols": cmd_symbols,
 }
 
 

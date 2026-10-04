@@ -200,6 +200,19 @@ class AmpWorker(threading.Thread):
         self._refresh_requested = True
         GLib.idle_add(self._on_result, "loaded", name, backup, skipped)
 
+    def _cmd_store_memory(self, index: int, name: str) -> None:
+        from ..patch import rename_dump
+        try:
+            dump = self.thr.dump_raw()
+            if name:
+                dump = rename_dump(dump, name)
+            ok = self.thr.store_memory(index, dump)
+        except Exception:
+            GLib.idle_add(self._on_result, "stored", index, False)
+            raise
+        self._refresh_requested = True
+        GLib.idle_add(self._on_result, "stored", index, ok)
+
     def _track(self, event) -> None:
         """Keep the cached settings in step with knob changes made on the amp."""
         unit = self.last_patch.find(event.unit) if self.last_patch is not None else None

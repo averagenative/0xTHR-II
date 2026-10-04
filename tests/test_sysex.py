@@ -48,6 +48,18 @@ class FrameTest(unittest.TestCase):
         self.assertIsNone(Frame.decode(hexbytes("f0 7e 7f 06 01 f7")))
 
 
+class UploadHeaderTest(unittest.TestCase):
+    def test_header_matches_protocol_notes_example(self):
+        from thr2.sysex import words
+        payload = words(0x0D, 0x26E, 2, 0x266, 0, 1, 0)
+        frame = Frame(0x22, 0x02, ab=1, counter=0x0B, part=0, payload=payload)
+        expected = hexbytes(
+            "f0 00 01 0c 22 02 4d 01 0b 00 01 0b 00 0d 00 00 00 6e 02 00 00 00 02 00 00 00 66 02"
+            " 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 f7"
+        )
+        self.assertEqual(frame.encode(), expected)
+
+
 class IdentityTest(unittest.TestCase):
     def test_thr30ii_wireless_1_40_0a(self):
         ident = parse_identity(hexbytes("f0 7e 7f 06 02 00 01 0c 24 00 02 00 61 00 28 01 f7"))

@@ -333,6 +333,28 @@ class THR:
         length = int.from_bytes(data[4:8], "little")
         return data[8:8 + length].split(b"\x00")[0].decode("utf-8", "replace")
 
+    def dump_raw(self, index: int = ACTUAL_SETTINGS) -> bytes:
+        """The raw patch dump (without its leading four words) for the current tone or a memory."""
+        return self.command(1, 0x0C, words(index), standalone=True, timeout=10).data[16:]
+
+    def store_memory(self, index: int, dump: bytes) -> bool:
+        """Write a raw patch dump into user memory ``index`` (0-based). Overwrites that memory.
+
+        Frame layout from the protocol notes: a B-command header (opcode 0x0D, total length,
+        memory index, data length, then 0, 1, 0), followed by the dump in 210-byte body
+        frames that share one frame counter and number their pieces 0, 1, 2, and so on.
+        """
+        if not 0 <= index <= 4:
+            raise THRError("User memories are numbered 1 to 5.")
+        LOG.info("Storing %d bytes into user memory %d", len(dump), index + 1)
+        self._send(1, words(0x0D, len(dump) + 20, index, len(dump) + 12, 0, 1, 0))
+        counter = self._counters[1]
+        self._counters[1] = (counter + 1) & 0x7F
+        for part, start in enumerate(range(0, len(dump), 210)):
+            frame = Frame(self.family, self.model, 1, counter, part, dump[start:start + 210])
+            self.midi.write(frame.encode())
+        return self._await_answer(1, timeout=5.0).ok
+
     def dump(self, index: int = ACTUAL_SETTINGS) -> Patch:
         data = self.command(1, 0x0C, words(index), standalone=True, timeout=10).data
         return parse_patch(data[16:], self.symbol)
