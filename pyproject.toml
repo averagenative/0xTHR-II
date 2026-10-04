@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thr2"
+version = "0.1.0"
+description = "Native Linux control for Yamaha THR-II amps over USB MIDI"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+thr2 = "thr2.cli:main"
+
+[tool.setuptools]
+packages = ["thr2"]
