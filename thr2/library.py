@@ -18,7 +18,21 @@ from . import thrl6p
 COMMUNITY_REPO = "f3sty/Yamaha_THRII_presets"
 COMMUNITY_ZIP = f"https://raw.githubusercontent.com/{COMMUNITY_REPO}/HEAD/presets/0_All_Presets.zip"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "thr2" / "community"
-USER_DIR = Path.home() / "Music" / "THR-II Presets"
+
+
+def _music_dir() -> Path:
+    """The desktop's Music folder (localized names included), falling back to ~/Music."""
+    try:
+        from gi.repository import GLib
+        music = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_MUSIC)
+        if music:
+            return Path(music)
+    except Exception:
+        pass
+    return Path.home() / "Music"
+
+
+USER_DIR = _music_dir() / "THR-II Presets"
 
 
 @dataclass

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thr2"
-version = "1.0.0"
+version = "1.0.1"
 description = "Native Linux control for Yamaha THR-II amps over USB and Bluetooth: library, CLI, and GTK4 app"
 readme = "README.md"
 license = "MIT"

@@ -119,8 +119,9 @@ class THR:
     _counters: dict = field(default_factory=lambda: {0: 0, 1: 0})
 
     @classmethod
-    def open(cls, path: str | None = None, load_symbols: bool = True, via: str = "auto") -> THR:
-        thr = cls(RawMidi(path) if path else open_transport(via))
+    def open(cls, path: str | None = None, load_symbols: bool = True, via: str = "auto",
+             bluetooth: bool = True) -> THR:
+        thr = cls(RawMidi(path) if path else open_transport(via, bluetooth))
         thr.connect(load_symbols=load_symbols)
         return thr
 

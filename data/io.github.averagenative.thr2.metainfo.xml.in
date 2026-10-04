@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.averagenative.thr2</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>THR-II Control</name>
+  <summary>Control a Yamaha THR-II amp over USB or Bluetooth</summary>
+  <description>
+    <p>
+      Native Linux control for Yamaha THR10II, THR10II Wireless, and THR30II Wireless amps.
+      Change amp models, effects, the noise gate, and volumes from one screen that follows
+      the amp's own knobs.
+    </p>
+    <ul>
+      <li>Load and save THR Remote presets, and browse a community collection of song tones</li>
+      <li>Save tones to the amp's five user memories</li>
+      <li>Record dry or processed guitar over USB, with a recording level meter</li>
+      <li>Themes that match the THR30II's cream, white, and black finishes</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.averagenative.thr2.desktop</launchable>
+  <url type="homepage">https://github.com/averagenative/0xTHR-II</url>
+  <url type="bugtracker">https://github.com/averagenative/0xTHR-II/issues</url>
+  <developer id="io.github.averagenative">
+    <name>averagenative</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

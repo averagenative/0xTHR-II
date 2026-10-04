@@ -13,14 +13,22 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 
 ## Install
 
-From a release, download the wheel from the [releases page](https://github.com/averagenative/0xTHR-II/releases) and install it for your user:
+The easiest way is the AppImage from the [releases page](https://github.com/averagenative/0xTHR-II/releases):
 
 ```bash
-pip install --user thr2-1.0.0-py3-none-any.whl
-thr2-gui
+chmod +x 0xTHR-II-1.0.1-x86_64.AppImage
+./0xTHR-II-1.0.1-x86_64.AppImage --install
 ```
 
-That gives you the `thr2` command and the `thr2-gui` app. The app uses your system's PyGObject, GTK, and libadwaita, so install with your system Python rather than a separate virtual environment.
+`--install` copies it to `~/Applications` and adds **THR-II Control** to your app grid with its icon. Run the AppImage with `cli` for the command-line tool (`./0xTHR-II-1.0.1-x86_64.AppImage cli info`), and with `--uninstall` to remove the menu entry. The AppImage runs on your system's Python 3.10 or later, PyGObject, GTK 4, libadwaita 1.7 or later, and GStreamer with the PipeWire plugin; if one is missing, it says what to install.
+
+Or install the wheel for your user, which gives you the `thr2` command and the `thr2-gui` app:
+
+```bash
+pip install --user thr2-1.0.1-py3-none-any.whl
+```
+
+Use your system Python, so the app can find PyGObject and GTK.
 
 From a clone, run `make gui` to start the app, or `make install` once to add **THR-II Control** to your GNOME app grid with an icon. `pip install --user -e .` installs the `thr2` command.
 
@@ -103,6 +111,25 @@ python3 -m thr2 save "My crunch"
 `load` accepts a file path or a preset name, and saves your previous tone to `~/.cache/thr2/last-tone-before-load.thrl6p` first. `save` writes to `~/Music/THR-II Presets` unless you give a path.
 
 `set`, `di`, `fx`, `load`, and `save` are verified on hardware. `amp` and `cab` use commands from the protocol notes but haven't been tested yet. Switching the amp model might reset its knobs, so save your tone to a user memory on the amp first.
+
+## Where files are stored
+
+Run `thr2 paths` (or `cli paths` with the AppImage) to list them. Nothing is written inside the AppImage, and the AppImage and a source checkout share the same files.
+
+| What | Where |
+|---|---|
+| Settings | `~/.config/thr2/settings.json` |
+| Your presets | `THR-II Presets` in your Music folder |
+| Community presets | `~/.cache/thr2/community/` |
+| Symbol tables, the last memory saved, and the tone before a CLI preset load | `~/.cache/thr2/` |
+| AppImage installed with `--install` | `~/Applications/` |
+| Menu entry and icons from `--install` | `~/.local/share/applications/` and `~/.local/share/icons/hicolor/` |
+
+`XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, and `XDG_DATA_HOME` move the first, cache, and menu locations as usual.
+
+## Building releases
+
+`make appimage` builds `dist/0xTHR-II-<version>-x86_64.AppImage` (it downloads appimagetool into `build/` the first time). `make release` runs the tests, builds the wheel, source archive, and AppImage, tags `v<version>`, and publishes a GitHub release with the matching CHANGELOG section and checksums. There's no CI; releases are built locally.
 
 ## Console and debug output
 

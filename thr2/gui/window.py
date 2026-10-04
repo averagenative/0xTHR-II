@@ -189,6 +189,11 @@ class THRWindow(Adw.ApplicationWindow):
             log.enable_debug(True)
         self.console: ConsoleWindow | None = None
         self.log = log.get("app")
+        from ..cli import paths
+        import os
+        self.log.info("Running from %s", os.environ.get("APPIMAGE") or "source")
+        for label, path in paths():
+            self.log.info("%s: %s", label, path)
         theme_id = self.prefs.get("theme", "adwaita")
         themes.manager().apply(theme_id)
         theme_action = Gio.SimpleAction.new_stateful(

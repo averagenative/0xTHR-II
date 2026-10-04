@@ -105,7 +105,7 @@ class RawMidi:
         self.close()
 
 
-def open_transport(via: str = "auto"):
+def open_transport(via: str = "auto", bluetooth: bool = True):
     """Open the amp over USB or Bluetooth.
 
     ``auto`` prefers USB. Without USB it uses a paired THR-II Wireless over Bluetooth,
@@ -122,6 +122,8 @@ def open_transport(via: str = "auto"):
             if via == "usb":
                 raise
             usb_error = err
+    if via == "auto" and not bluetooth:
+        raise usb_error or DeviceNotFound("No THR-II on USB.")
     try:
         from .ble import BleMidi, find_thr
     except ImportError:

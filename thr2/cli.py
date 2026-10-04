@@ -210,6 +210,24 @@ def cmd_save(thr: THR, args) -> None:
     print(f"Saved the current tone as {path}")
 
 
+def paths() -> list[tuple[str, Path]]:
+    from .client import CACHE_DIR
+    from .gui import settings as gui_settings
+    return [
+        ("Settings", gui_settings.PATH),
+        ("Your presets", library.USER_DIR),
+        ("Community presets", library.CACHE),
+        ("Symbol tables and other cache", CACHE_DIR),
+        ("Last memory saved", THR.LAST_SAVED),
+        ("Tone before the last CLI preset load", library.CACHE.parent / "last-tone-before-load.thrl6p"),
+    ]
+
+
+def cmd_paths(args) -> None:
+    for label, path in paths():
+        print(f"{label:38s} {path}")
+
+
 def cmd_presets(args) -> None:
     if args.update or not library.community_ready():
         print(f"Downloaded {library.download_community()} community presets.", file=sys.stderr)
@@ -291,6 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("file", help="File name; a bare name goes in ~/Music/THR-II Presets")
     p.add_argument("--name", help="Preset name shown in THR Remote and this app")
 
+    sub.add_parser("paths", help="Show where settings, presets, and caches are stored")
+
     p = sub.add_parser("presets", help="List presets in your folder and the community collection")
     p.add_argument("filter", nargs="?")
     p.add_argument("--update", action="store_true", help="Download the community collection again")
@@ -327,6 +347,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"fx: unknown argument {unknown[0]!r}; use comp, effect, echo, reverb, on, off")
     if args.command == "presets":
         cmd_presets(args)
+        return 0
+    if args.command == "paths":
+        cmd_paths(args)
         return 0
     try:
         with THR.open(via=args.via) as thr:

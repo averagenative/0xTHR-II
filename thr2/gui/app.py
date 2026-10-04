@@ -47,10 +47,24 @@ class THRApplication(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        self._use_bundled_icon()
         provider = Gtk.CssProvider()
         provider.load_from_string(CSS)
         Gtk.StyleContext.add_provider_for_display(
             Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+    def _use_bundled_icon(self) -> None:
+        """Let the window find the app icon inside the AppImage or the source tree."""
+        import os
+        from pathlib import Path
+        theme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+        appdir = os.environ.get("THR2_APPDIR")
+        if appdir:
+            theme.add_search_path(str(Path(appdir) / "usr" / "share" / "icons"))
+        source_data = Path(__file__).resolve().parents[2] / "data"
+        if source_data.is_dir():
+            theme.add_search_path(str(source_data))
+        Gtk.Window.set_default_icon_name(APP_ID)
 
     def do_activate(self):
         window = self.get_active_window()

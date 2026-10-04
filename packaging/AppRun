@@ -1,0 +1,49 @@
+#!/bin/sh
+# THR-II Control AppImage entry point. Runs the bundled thr2 package on the system's
+# Python, GTK 4, and libadwaita. Modes:
+#   ./0xTHR-II.AppImage                 the app
+#   ./0xTHR-II.AppImage cli info        the thr2 command-line tool
+#   ./0xTHR-II.AppImage --install       add it to the app grid with its icon
+#   ./0xTHR-II.AppImage --uninstall     remove that integration
+#   ./0xTHR-II.AppImage --version
+#   ./0xTHR-II.AppImage cli paths       where settings, presets, and caches live
+HERE="$(dirname "$(readlink -f "$0")")"
+export THR2_APPDIR="$HERE"
+export PYTHONPATH="$HERE/usr/lib/thr2${PYTHONPATH:+:$PYTHONPATH}"
+# The AppImage is read-only, so don't try to write bytecode next to the bundled code.
+export PYTHONDONTWRITEBYTECODE=1
+
+fail() {
+    if command -v zenity >/dev/null 2>&1 && [ -n "$WAYLAND_DISPLAY$DISPLAY" ]; then
+        zenity --error --title="THR-II Control" --width=460 --text="$1" 2>/dev/null
+    fi
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+PY="$(command -v python3 || true)"
+[ -n "$PY" ] || fail "THR-II Control needs Python 3.10 or later. Install python3 from your distribution."
+
+case "$(basename "${ARGV0:-$0}")" in
+    thr2|thr2-cli) exec "$PY" -m thr2 "$@" ;;
+esac
+case "${1:-}" in
+    cli) shift; exec "$PY" -m thr2 "$@" ;;
+    --install|--uninstall) exec "$PY" -m thr2.gui.integrate "$@" ;;
+    --version) exec "$PY" -c 'import thr2; print("THR-II Control", thr2.__version__)' ;;
+esac
+
+"$PY" - <<'CHECK' 2>/dev/null || fail "THR-II Control needs GTK 4, libadwaita 1.7 or later, PyGObject, and GStreamer.
+
+Fedora: sudo dnf install python3-gobject gtk4 libadwaita gstreamer1-plugins-good pipewire-gstreamer
+Ubuntu 25.04 or later: sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gstreamer1.0-pipewire
+Arch: sudo pacman -S python-gobject gtk4 libadwaita gst-plugin-pipewire"
+import sys
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw
+sys.exit(0 if sys.version_info >= (3, 10) and (Adw.get_major_version(), Adw.get_minor_version()) >= (1, 7) else 1)
+CHECK
+
+exec "$PY" -m thr2.gui "$@"

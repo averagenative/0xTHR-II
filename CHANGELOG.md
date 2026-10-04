@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 (2026-10-04)
+
+- AppImage release: `0xTHR-II-1.0.1-x86_64.AppImage` runs on the system's Python, GTK 4, libadwaita, and GStreamer, and explains what to install if something is missing. `--install` adds it to the app grid with its icon; `--uninstall` removes that; `cli` runs the command-line tool.
+- `thr2 paths` shows where settings, presets, and caches are stored, and the app's Console lists them at startup.
+- Your presets folder follows the desktop's Music folder, including localized names.
+- With the amp off, the app retries Bluetooth every 5 to 30 seconds instead of every 2 seconds. USB is still checked every 2 seconds.
+- `make release` builds the wheel, source archive, and AppImage, and publishes a GitHub release with checksums.
+
 ## 1.0.0 (2026-10-04)
 
 First release. Tested on a THR30II Wireless with firmware 1.40.0a on Fedora 44.

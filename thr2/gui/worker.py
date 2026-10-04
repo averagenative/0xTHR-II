@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from dataclasses import dataclass, field
 
 import traceback
@@ -51,6 +52,8 @@ class AmpWorker(threading.Thread):
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._force_bluetooth = False
+        self._next_bluetooth = 0.0
+        self._bluetooth_backoff = 5.0
         self._refresh_requested = False
         self.thr: THR | None = None
         self.last_patch = None
@@ -100,10 +103,14 @@ class AmpWorker(threading.Thread):
 
     def _connect(self) -> bool:
         via, self._force_bluetooth = ("bluetooth" if self._force_bluetooth else "auto"), False
+        try_bluetooth = via == "bluetooth" or time.monotonic() >= self._next_bluetooth
         try:
-            self.thr = THR.open(via=via)
+            self.thr = THR.open(via=via, bluetooth=try_bluetooth)
         except (DeviceNotFound, THRError, OSError) as err:
             self.thr = None
+            if try_bluetooth:
+                self._next_bluetooth = time.monotonic() + self._bluetooth_backoff
+                self._bluetooth_backoff = min(self._bluetooth_backoff * 2, 30.0)
             if str(err) != getattr(self, "_last_error", None):
                 LOG.info("Not connected: %s", err)
                 self._last_error = str(err)
@@ -115,6 +122,7 @@ class AmpWorker(threading.Thread):
             GLib.idle_add(self._on_status, False, f"Connection error: {err}. See Console.")
             return False
         self._last_error = None
+        self._next_bluetooth, self._bluetooth_backoff = 0.0, 5.0
         LOG.info("Connected over %s", self.thr.midi.kind)
         GLib.idle_add(self._on_status, True, self.thr.midi.kind)
         self._refresh()
