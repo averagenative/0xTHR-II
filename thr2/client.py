@@ -346,6 +346,11 @@ class THR:
         """
         if not 0 <= index <= 4:
             raise THRError("User memories are numbered 1 to 5.")
+        wait = self.store_cooldown_left()
+        if wait > 0:
+            LOG.info("Waiting %.0f s for the amp to finish the previous save", wait)
+            time.sleep(wait)
+        self.poll_events(0.2)
         LOG.info("Storing %d bytes into user memory %d", len(dump), index + 1)
         self._send(1, words(0x0D, len(dump) + 20, index, len(dump) + 12, 0, 1, 0))
         counter = self._counters[1]
@@ -357,7 +362,16 @@ class THR:
             LOG.warning("The amp rejected the save to memory %d", index + 1)
             return False
         self._wait_for_store_report(index)
-        return self._confirm_store(index, dump)
+        confirmed = self._confirm_store(index, dump)
+        self._last_store = time.monotonic()
+        return confirmed
+
+    STORE_COOLDOWN = 15.0
+
+    def store_cooldown_left(self) -> float:
+        """Seconds until another save is safe. A second save soon after the first hung the amp."""
+        last = getattr(self, "_last_store", None)
+        return 0.0 if last is None else max(0.0, self.STORE_COOLDOWN - (time.monotonic() - last))
 
     def _confirm_store(self, index: int, dump: bytes, timeout: float = 20.0) -> bool:
         """Wait until the memory reads back with the saved name.
@@ -386,7 +400,7 @@ class THR:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             for event in self.poll_events(0.1):
-                if event.opcode == 0x02:
+                if event.opcode == 0x02 and event.param != "dumped":
                     LOG.debug("Store report: %s", [hex(w) for w in event.words[:6]])
                     time.sleep(0.3)
                     return
