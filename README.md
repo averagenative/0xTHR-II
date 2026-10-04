@@ -20,7 +20,7 @@ Everything fits on one screen, laid out like the amp's front panel:
 - **Top:** the amp (model category plus Modern, Boutique, or Classic character, cabinet, and the five main knobs) and the recording level panel.
 - **Middle:** the compressor, effect (chorus, flanger, phaser, or tremolo), echo, and reverb, each with an on/off switch, a model picker, Mix, and that model's settings.
 - **Bottom:** the noise gate and the five user memories.
-- **Header bar:** **Knob step** and the USB recording output (**Amp** or **Dry**).
+- **Header bar:** **Presets**, **Knob step**, the Console, the theme menu, **Record** (what the USB recording carries: **Amp** or **Dry**), and two link lights: the Bluetooth rune glows blue and the USB trident glows red while that link is up. Their tooltips say which link controls the amp.
 
 The window mirrors the amp: turn a knob on the amp and the matching knob in the app moves. It reconnects by itself when you unplug or power-cycle the amp.
 
@@ -87,6 +87,10 @@ python3 -m thr2 save "My crunch"
 
 To install the `thr2` command for your user, run `pip install --user -e .` in this directory.
 
+## Console and debug output
+
+The Console button opens a live log of connections, commands, timeouts, and errors. Turn on **Debug** in the console to also log every frame sent to and received from the amp, as hex. **Copy** puts the whole log on the clipboard for a bug report. The app remembers the Debug setting. From a terminal, `python3 -m thr2.gui --debug` and `python3 -m thr2 --debug <command>` print the same log.
+
 ## Bluetooth
 
 THR-II Wireless amps also take control over Bluetooth LE. Pair the amp once in GNOME's Bluetooth settings (it appears as `LE_THRII`). After that, the app uses USB when the cable is plugged in and Bluetooth otherwise, and connects the amp by itself; the window title shows which one is active. The command-line tool does the same, or takes `--via usb` or `--via bluetooth`.
@@ -118,6 +122,9 @@ The amp's GUITAR knob doesn't affect the USB level, and turning on the tuner mut
 | `thr2/gui/knob.py` | Rotary knob control with drag, scroll, and keyboard input and a shared step setting |
 | `thr2/gui/settings.py` | Per-user preferences |
 | `thr2/gui/presets.py` | The preset browser |
+| `thr2/gui/console.py` | The console window |
+| `thr2/gui/indicators.py` | The Bluetooth and USB link lights |
+| `thr2/log.py` | Logging, the console's ring buffer, and raw frame tracing |
 | `thr2/gui/themes.py` | Themes: libadwaita color variables, extra CSS, knob styles, and the generated grille texture |
 | `thr2/gui/meter.py` | USB recording level meter: `pipewiresrc ! level`, pinned to the amp's capture node with fallback disabled |
 

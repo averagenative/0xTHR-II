@@ -223,6 +223,7 @@ def cmd_symbols(thr: THR, args) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="thr2", description="Control a Yamaha THR-II amp over USB or Bluetooth.")
+    parser.add_argument("--debug", action="store_true", help="Print the connection log and every raw frame")
     parser.add_argument("--via", choices=("auto", "usb", "bluetooth"), default="auto",
                         help="Connection to use. auto prefers USB, then a connected Bluetooth amp.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -284,6 +285,10 @@ COMMANDS = {
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.debug:
+        from . import log
+        log.to_stderr()
+        log.enable_debug(True)
     if args.command == "fx":
         words_ = [a.lower() for a in args.args]
         args.which = next((w for w in words_ if w in FX_UNITS), None)

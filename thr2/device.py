@@ -13,6 +13,10 @@ import select
 import threading
 from pathlib import Path
 
+from . import log
+
+LOG = log.get("transport")
+
 CARDS = Path("/proc/asound/cards")
 
 
@@ -46,6 +50,7 @@ class RawMidi:
         self._reader.start()
 
     def write(self, data: bytes) -> None:
+        log.frame("TX", data, "usb")
         view = memoryview(data)
         while view:
             try:
@@ -71,7 +76,8 @@ class RawMidi:
                 chunk = os.read(self.fd, 4096)
             except BlockingIOError:
                 continue
-            except OSError:
+            except OSError as err:
+                LOG.warning("USB MIDI read failed: %s", err)
                 break
             for byte in chunk:
                 if byte == 0xF0:
@@ -80,6 +86,7 @@ class RawMidi:
                 elif in_sysex:
                     pending.append(byte)
                     if byte == 0xF7:
+                        log.frame("RX", bytes(pending), "usb")
                         self.messages.put(bytes(pending))
                         in_sysex = False
 
@@ -107,8 +114,11 @@ def open_transport(via: str = "auto"):
     usb_error = None
     if via in ("auto", "usb"):
         try:
-            return RawMidi()
+            midi = RawMidi()
+            LOG.info("Opened USB MIDI at %s", midi.path)
+            return midi
         except DeviceNotFound as err:
+            LOG.debug("USB: %s", err)
             if via == "usb":
                 raise
             usb_error = err
@@ -117,12 +127,16 @@ def open_transport(via: str = "auto"):
     except ImportError:
         raise DeviceNotFound("No THR-II on USB, and Bluetooth needs PyGObject.") from usb_error
     info = find_thr()
+    LOG.debug("Bluetooth lookup: %s", info)
     if info is None:
         raise DeviceNotFound("Turn the amp on and connect it with a USB cable, or pair a THR-II Wireless "
                              "in Bluetooth settings.")
     try:
-        return BleMidi(info, connect_timeout=8.0)
+        midi = BleMidi(info, connect_timeout=8.0)
+        LOG.info("Opened Bluetooth MIDI to %s (%s), MTU %d", info["name"], info["address"], midi.mtu)
+        return midi
     except Exception as err:
+        LOG.warning("Bluetooth open failed: %s", err)
         state = "connected" if info["connected"] else "paired but not reachable"
         raise DeviceNotFound(f"{info['name']} is {state} over Bluetooth. Turn the amp on, or plug in a "
                              f"USB cable. ({err})") from err

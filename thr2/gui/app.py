@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk  # noqa: E402
 
+from .. import log  # noqa: E402
 from .window import THRWindow  # noqa: E402
 
 APP_ID = "io.github.averagenative.thr2"
@@ -71,7 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="thr2-gui")
     parser.add_argument("--screenshot", metavar="PNG", help="Render the window to a PNG after connecting, then quit")
     parser.add_argument("--height", type=int, help="Window height, useful with --screenshot")
+    parser.add_argument("--debug", action="store_true", help="Log raw frames and print the log to the terminal")
     args, rest = parser.parse_known_args(argv)
+    if args.debug:
+        log.to_stderr()
+        log.enable_debug(True)
     app = THRApplication(args.screenshot, args.height)
     if args.screenshot:
         app.set_flags(app.get_flags() | Gio.ApplicationFlags.NON_UNIQUE)

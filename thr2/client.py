@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import log
 from .device import RawMidi, open_transport
 from .patch import Patch, parse_patch
 from .sysex import (
@@ -79,6 +80,7 @@ AMP_NAMES = {
 }
 
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "thr2"
+LOG = log.get("client")
 
 
 class THRError(RuntimeError):
@@ -152,6 +154,8 @@ class THR:
         if not self.identity:
             self.midi.close()
             raise THRError("No identity reply. The amp may be off or in firmware-update mode.")
+        LOG.info("Amp identified: family 0x%02x model %d firmware %s", self.identity["family"],
+                 self.identity["model"], self.identity["version"])
         self._drain(0.3)
 
         answer = self.command(0, 0x01)
@@ -161,6 +165,7 @@ class THR:
         ack = self.command(0, 0x04, words(key))
         if not ack.ok:
             raise THRError(f"Amp rejected the unlock key for firmware {self.firmware_text}.")
+        LOG.info("MIDI control unlocked (firmware %s)", self.firmware_text)
         if load_symbols:
             self.symbols = self.load_symbols()
 
@@ -219,6 +224,7 @@ class THR:
             if len(data) >= total:
                 data = data[:total]
                 return Answer(unpack_words(bytes(data)), bytes(data))
+        LOG.warning("Timed out waiting for an answer (group %s, got %d of %s bytes)", "AB"[ab], len(data), total)
         raise THRError("Timed out waiting for the amp to answer.")
 
     def _drain(self, seconds: float) -> None:
@@ -242,7 +248,9 @@ class THR:
     def load_symbols(self) -> list[str]:
         cache = CACHE_DIR / f"symbols-{self.firmware:08x}.json"
         if cache.exists():
+            LOG.debug("Symbol table from cache %s", cache)
             return json.loads(cache.read_text())
+        LOG.info("Downloading the symbol table from the amp")
         data = self.command(0, 0x03, timeout=10).data
         count = int.from_bytes(data[0:4], "little")
         table = data[8:8 + 12 * count]
@@ -278,6 +286,7 @@ class THR:
 
     def set_param(self, unit: str | int, param: str, value: float) -> bool:
         """Set a float parameter. Values are 0.0 to 1.0 on the wire; most UIs show 0 to 100."""
+        LOG.debug("set %s.%s = %.4f", unit, param, value)
         ukey = GLOBAL_UNIT if unit in (GLOBAL_UNIT, "global") else self.key(unit)
         body = words(ukey, self.key(param), TYPE_FLOAT, float_word(value))
         return self.command(0, 0x0A, body).ok

@@ -11,7 +11,10 @@ from gi.repository import Adw, Gio, GLib, Gtk, Pango  # noqa: E402
 from ..client import AMP_NAMES, CABINETS  # noqa: E402
 from . import settings, themes  # noqa: E402
 from .knob import Knob, StepSetting  # noqa: E402
-from .. import library, thrl6p  # noqa: E402
+from .. import library, log, thrl6p  # noqa: E402
+from ..device import DeviceNotFound, find_thr_midi  # noqa: E402
+from .console import ConsoleWindow  # noqa: E402
+from .indicators import LinkLight  # noqa: E402
 from .meter import CLIP_DB, DB_MIN, LevelMeter, LevelMonitor, find_capture_node  # noqa: E402
 from .presets import PresetsDialog  # noqa: E402
 from .worker import AmpState, AmpWorker  # noqa: E402
@@ -175,6 +178,10 @@ class THRWindow(Adw.ApplicationWindow):
         self.original_tone: dict | None = None
 
         self.add_css_class("thr2-window")
+        if self.prefs.get("debug") and not log.debug_enabled():
+            log.enable_debug(True)
+        self.console: ConsoleWindow | None = None
+        self.log = log.get("app")
         theme_id = self.prefs.get("theme", "adwaita")
         themes.manager().apply(theme_id)
         theme_action = Gio.SimpleAction.new_stateful(
@@ -189,7 +196,7 @@ class THRWindow(Adw.ApplicationWindow):
         header.set_title_widget(self.title_widget)
 
         usb_box = Gtk.Box(spacing=6)
-        usb_label = Gtk.Label(label="USB")
+        usb_label = Gtk.Label(label="Record")
         usb_label.add_css_class("dim-label")
         self.usb_toggle = Adw.ToggleGroup(tooltip_text="What the computer records over USB")
         self.usb_toggle.add(Adw.Toggle(name="amp", label="Amp", tooltip="Record the amp's processed sound over USB"))
@@ -198,6 +205,12 @@ class THRWindow(Adw.ApplicationWindow):
         self.usb_toggle.set_sensitive(False)
         usb_box.append(usb_label)
         usb_box.append(self.usb_toggle)
+        links = Gtk.Box(spacing=2)
+        self.link_bt = LinkLight("bluetooth")
+        self.link_usb = LinkLight("usb")
+        links.append(self.link_bt)
+        links.append(self.link_usb)
+        header.pack_end(links)
         header.pack_end(usb_box)
 
         menu = Gio.Menu()
@@ -211,6 +224,10 @@ class THRWindow(Adw.ApplicationWindow):
         theme_button = Gtk.MenuButton(icon_name="applications-graphics-symbolic", menu_model=menu,
                                       tooltip_text="Theme")
         header.pack_end(theme_button)
+        console_button = Gtk.Button(icon_name="utilities-terminal-symbolic",
+                                    tooltip_text="Console: connection log and debug output")
+        console_button.connect("clicked", self._show_console)
+        header.pack_end(console_button)
 
         step_box = Gtk.Box(spacing=6)
         step_label = Gtk.Label(label="Knob step")
@@ -256,6 +273,8 @@ class THRWindow(Adw.ApplicationWindow):
         self.set_content(self.toasts)
 
         self.worker = AmpWorker(self._on_state, self._on_event, self._on_status, self._on_error, self._on_result)
+        self._update_links()
+        GLib.timeout_add_seconds(2, self._update_links)
         self.connect("close-request", self._on_close)
         self.worker.start()
 
@@ -272,6 +291,7 @@ class THRWindow(Adw.ApplicationWindow):
         self.presets_dialog.present(self)
 
     def load_preset(self, preset: dict, name: str) -> None:
+        self.log.info("Loading preset %r", name)
         self.worker.submit("load_preset", preset, name, self.original_tone is None)
 
     def restore_original(self) -> None:
@@ -293,11 +313,40 @@ class THRWindow(Adw.ApplicationWindow):
         elif kind == "saved" and self.presets_dialog:
             self.presets_dialog.saved(args[0])
 
+    def _update_links(self) -> bool:
+        try:
+            find_thr_midi()
+            usb_up = True
+        except (DeviceNotFound, OSError):
+            usb_up = False
+        try:
+            from ..ble import find_thr
+            info = find_thr()
+            bt_up = bool(info and info["connected"])
+        except Exception:
+            bt_up = False
+        active = self.transport if self._connected else None
+        self.link_usb.set_state(usb_up or active == "USB", active == "USB")
+        self.link_bt.set_state(bt_up or active == "Bluetooth", active == "Bluetooth")
+        return GLib.SOURCE_CONTINUE
+
+    def _show_console(self, _button) -> None:
+        if self.console is None:
+            self.console = ConsoleWindow(self._debug_changed)
+            self.console.connect("close-request", lambda *_: setattr(self, "console", None) or False)
+        self.console.present()
+
+    def _debug_changed(self, on: bool) -> None:
+        self.prefs["debug"] = on
+        settings.save(self.prefs)
+
     def _connect_bluetooth(self, _button) -> None:
         self.waiting.set_description("Connecting over Bluetooth...")
         self.worker.connect_bluetooth()
 
     def _on_close(self, *_args):
+        if self.console:
+            self.console.close()
         self._stop_meter()
         self.worker.stop()
         return False
@@ -305,6 +354,7 @@ class THRWindow(Adw.ApplicationWindow):
     def _theme_changed(self, action, value) -> None:
         action.set_state(value)
         theme = themes.manager().apply(value.get_string())
+        self.log.info("Theme: %s", theme.name)
         self.prefs["theme"] = theme.id
         settings.save(self.prefs)
 
@@ -475,6 +525,7 @@ class THRWindow(Adw.ApplicationWindow):
         if self.monitor is None:
             node = find_capture_node()
             if node:
+                self.log.info("Level meter watching %s", node)
                 self.monitor = LevelMonitor(node, self._on_level, self._on_meter_stopped)
         return GLib.SOURCE_CONTINUE
 
@@ -501,8 +552,10 @@ class THRWindow(Adw.ApplicationWindow):
         if connected:
             self.transport = message or "USB"
             self.title_widget.set_subtitle(f"Connecting over {self.transport}")
+            self._update_links()
             return
         self._stop_meter()
+        self._update_links()
         self.stack.set_visible_child_name("waiting")
         self.usb_toggle.set_sensitive(False)
         self.title_widget.set_title("THR-II")
@@ -511,6 +564,7 @@ class THRWindow(Adw.ApplicationWindow):
             self.waiting.set_description(message)
 
     def _on_error(self, message: str) -> None:
+        self.log.warning("Shown to user: %s", message)
         self.toasts.add_toast(Adw.Toast(title=message, timeout=4))
 
     def _on_state(self, state: AmpState) -> None:

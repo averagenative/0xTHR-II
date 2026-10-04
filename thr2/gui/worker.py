@@ -12,7 +12,13 @@ import queue
 import threading
 from dataclasses import dataclass, field
 
+import traceback
+
 from gi.repository import GLib
+
+from .. import log
+
+LOG = log.get("worker")
 
 from .. import thrl6p
 from ..client import THR, THRError
@@ -79,10 +85,15 @@ class AmpWorker(threading.Thread):
                     self._refresh_requested = False
                     self._refresh()
             except (OSError, THRError) as err:
+                LOG.warning("%s", err)
                 if self._device_gone():
                     self._disconnect(str(err))
                 else:
                     GLib.idle_add(self._on_error, str(err))
+            except Exception as err:
+                LOG.error("Unexpected error, reconnecting:\n%s", traceback.format_exc())
+                GLib.idle_add(self._on_error, f"Unexpected error: {err}. Reconnecting; see Console.")
+                self._disconnect(f"Reconnecting after an error: {err}")
         if self.thr:
             self.thr.close()
 
@@ -92,8 +103,18 @@ class AmpWorker(threading.Thread):
             self.thr = THR.open(via=via)
         except (DeviceNotFound, THRError, OSError) as err:
             self.thr = None
+            if str(err) != getattr(self, "_last_error", None):
+                LOG.info("Not connected: %s", err)
+                self._last_error = str(err)
             GLib.idle_add(self._on_status, False, str(err))
             return False
+        except Exception as err:
+            self.thr = None
+            LOG.error("Unexpected error while connecting:\n%s", traceback.format_exc())
+            GLib.idle_add(self._on_status, False, f"Connection error: {err}. See Console.")
+            return False
+        self._last_error = None
+        LOG.info("Connected over %s", self.thr.midi.kind)
         GLib.idle_add(self._on_status, True, self.thr.midi.kind)
         self._refresh()
         return True
@@ -102,10 +123,11 @@ class AmpWorker(threading.Thread):
         return self.thr is None or not self.thr.midi.alive()
 
     def _disconnect(self, reason: str) -> None:
+        LOG.info("Disconnected: %s", reason)
         try:
             if self.thr:
                 self.thr.close()
-        except OSError:
+        except Exception:
             pass
         self.thr = None
         GLib.idle_add(self._on_status, False, reason)

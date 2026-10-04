@@ -21,6 +21,10 @@ import time
 
 from gi.repository import Gio, GLib
 
+from . import log
+
+LOG = log.get("ble")
+
 MIDI_SERVICE = "03b80e5a-ede8-4b33-a751-6ce34ec4c700"
 MIDI_CHARACTERISTIC = ("7772e5db-3868-4112-a1a9-f2669d106bf3", "00006bf3-0000-1000-8000-00805f9b34fb")
 BLUEZ = "org.bluez"
@@ -139,6 +143,7 @@ class BleMidi:
         self.name = info.get("name") or "THR-II"
         self.path = f"bluetooth:{info.get('address')}"
         if not info.get("connected"):
+            LOG.info("Asking BlueZ to connect %s", self.path)
             self.bus.call_sync(BLUEZ, self.device, "org.bluez.Device1", "Connect", None, None,
                                Gio.DBusCallFlags.NONE, int(connect_timeout * 1000), None)
         self.char = None
@@ -149,11 +154,14 @@ class BleMidi:
                 time.sleep(0.3)
         if self.char is None:
             raise BluetoothNotFound("The amp is connected but its MIDI service didn't appear.")
+        LOG.debug("MIDI characteristic: %s", self.char)
         self.notify_fd, mtu_in = self._acquire("AcquireNotify")
         try:
             self.write_fd, self.mtu = self._acquire("AcquireWrite")
-        except GLib.Error:
+        except GLib.Error as err:
+            LOG.info("AcquireWrite unavailable (%s); using WriteValue", err.message)
             self.write_fd, self.mtu = None, DEFAULT_MTU
+        LOG.debug("Notify MTU %d, write MTU %d", mtu_in, self.mtu)
         self.messages: queue.Queue[bytes] = queue.Queue()
         self._read_size = max(mtu_in, 512)
         self._stop = threading.Event()
@@ -169,6 +177,7 @@ class BleMidi:
         return fds.get(handle), mtu
 
     def write(self, data: bytes) -> None:
+        log.frame("TX", data, "ble")
         for packet in packetize(data, self.mtu):
             if self.write_fd is not None:
                 os.write(self.write_fd, packet)
@@ -192,11 +201,14 @@ class BleMidi:
                 continue
             try:
                 packet = os.read(self.notify_fd, self._read_size)
-            except OSError:
+            except OSError as err:
+                LOG.warning("Bluetooth notifications stopped: %s", err)
                 break
             if not packet:
+                LOG.warning("Bluetooth notification socket closed; the link probably dropped")
                 break
             for message in reassembler.feed(packet):
+                log.frame("RX", message, "ble")
                 self.messages.put(message)
 
     def alive(self) -> bool:
