@@ -125,6 +125,14 @@ def parse_patch(data: bytes, symbol: Callable[[int], str]) -> Patch:
 NAME_LIMIT = 64
 
 
+def dump_name(dump: bytes) -> str:
+    """The name stored in a raw patch dump, or an empty string."""
+    try:
+        return str(parse_patch(dump, lambda key: str(key)).meta.get("name", ""))
+    except (PatchError, struct.error):
+        return ""
+
+
 def rename_dump(dump: bytes, name: str) -> bytes:
     """Return a copy of a raw patch dump with its name changed.
 

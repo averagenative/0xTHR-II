@@ -353,7 +353,29 @@ class THR:
         for part, start in enumerate(range(0, len(dump), 210)):
             frame = Frame(self.family, self.model, 1, counter, part, dump[start:start + 210])
             self.midi.write(frame.encode())
-        return self._await_answer(1, timeout=5.0).ok
+        if not self._await_answer(1, timeout=5.0).ok:
+            LOG.warning("The amp rejected the save to memory %d", index + 1)
+            return False
+        self._wait_for_store_report(index)
+        from .patch import dump_name
+        expected = dump_name(dump)
+        stored = self.patch_name(index)
+        if expected and stored != expected:
+            LOG.warning("Memory %d reads %r after saving %r; the amp didn't store it", index + 1, stored, expected)
+            return False
+        LOG.info("Memory %d now holds %r", index + 1, stored)
+        return True
+
+    def _wait_for_store_report(self, index: int, timeout: float = 3.0) -> None:
+        """The amp reports a stored memory with opcode 0x02; let it finish writing before moving on."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for event in self.poll_events(0.1):
+                if event.opcode == 0x02:
+                    LOG.debug("Store report: %s", [hex(w) for w in event.words[:6]])
+                    time.sleep(0.3)
+                    return
+        LOG.debug("No store report from the amp within %.1f s", timeout)
 
     def dump(self, index: int = ACTUAL_SETTINGS) -> Patch:
         data = self.command(1, 0x0C, words(index), standalone=True, timeout=10).data
