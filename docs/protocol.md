@@ -108,7 +108,7 @@ Read with opcode `0x0D` and write with `0x0E`. The answer is a status word, a ty
 
 - Header frame (group B): words `0x0D`, data length + 20, memory index (0-based), data length + 12, then `0`, `1`, `0`. The data is a raw patch dump, the same bytes a dump request returns after its four leading words. Body frames carry the data in 210-byte pieces; they share one frame counter (header counter + 1) and number their pieces 0, 1, 2 in the `part` byte.
 - The amp acknowledges with a normal answer frame and doesn't send an opcode `0x02` report. The new name reads back right away.
-- Saving the same memory twice without turning the amp off and on hangs the amp (five times in testing, by Bluetooth and USB, with gaps up to 15 seconds). The second save is still written. Saving different memories back to back works.
+- Saving the same memory twice in a row hangs the amp until it's turned off and on (five times in testing, by Bluetooth and USB, with gaps up to 15 seconds); the second save is still written. It isn't time-based: re-saving a memory 13 seconds after its last save worked when another memory was saved in between. Rewriting another memory with its own unchanged dump counts as that in-between save, so `store_memory` does that automatically when needed.
 - The memory name is the first value of the dump's meta section and can be rewritten before saving (up to 63 characters plus NUL).
 
 ## Batched changes (verified)

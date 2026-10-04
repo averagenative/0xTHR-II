@@ -116,7 +116,6 @@ class THR:
     firmware: int = 0
     symbols: list[str] = field(default_factory=list)
     events: queue.Queue = field(default_factory=queue.Queue)
-    saved_memories: set = field(default_factory=set)
     _counters: dict = field(default_factory=lambda: {0: 0, 1: 0})
 
     @classmethod
@@ -342,18 +341,29 @@ class THR:
         """The raw patch dump (without its leading four words) for the current tone or a memory."""
         return self.command(1, 0x0C, words(index), standalone=True, timeout=10).data[16:]
 
+    LAST_SAVED = CACHE_DIR / "last-saved-memory.json"
+
     def store_memory(self, index: int, dump: bytes) -> bool:
         """Write a raw patch dump into user memory ``index`` (0-based). Overwrites that memory.
 
         Frame layout from the protocol notes: a B-command header (opcode 0x0D, total length,
         memory index, data length, then 0, 1, 0), followed by the dump in 210-byte body
         frames that share one frame counter and number their pieces 0, 1, 2, and so on.
+
+        The THR30II hangs if the same memory is saved twice in a row, until it's turned off
+        and on; a save to any other memory in between avoids that. So when ``index`` was the
+        last memory saved, this first rewrites another memory with its own unchanged dump.
         """
         if not 0 <= index <= 4:
             raise THRError("User memories are numbered 1 to 5.")
-        if index in self.saved_memories:
-            raise THRError(f"Memory {index + 1} was already saved since connecting. The amp's firmware hangs if "
-                           "the same memory is saved twice, so turn the amp off and on before saving it again.")
+        if self._last_saved() == index:
+            other = (index - 1) % 5
+            LOG.info("Memory %d was the last one saved; rewriting memory %d unchanged first", index + 1, other + 1)
+            if not self._store(other, self.dump_raw(other)):
+                return False
+        return self._store(index, dump)
+
+    def _store(self, index: int, dump: bytes) -> bool:
         self.poll_events(0.2)
         LOG.info("Storing %d bytes into user memory %d", len(dump), index + 1)
         self._send(1, words(0x0D, len(dump) + 20, index, len(dump) + 12, 0, 1, 0))
@@ -365,9 +375,22 @@ class THR:
         if not self._await_answer(1, timeout=5.0).ok:
             LOG.warning("The amp rejected the save to memory %d", index + 1)
             return False
-        self.saved_memories.add(index)
+        self._remember_saved(index)
         time.sleep(0.3)
         return self._confirm_store(index, dump)
+
+    def _last_saved(self) -> int | None:
+        try:
+            return int(json.loads(self.LAST_SAVED.read_text())["index"])
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def _remember_saved(self, index: int) -> None:
+        try:
+            self.LAST_SAVED.parent.mkdir(parents=True, exist_ok=True)
+            self.LAST_SAVED.write_text(json.dumps({"index": index, "time": time.time()}))
+        except OSError:
+            pass
 
     def _confirm_store(self, index: int, dump: bytes, timeout: float = 20.0) -> bool:
         """Wait until the memory reads back with the saved name.

@@ -160,7 +160,7 @@ class PresetsDialog(Adw.Dialog):
         except thrl6p.PresetError as err:
             self.toasts.add_toast(Adw.Toast(title=str(err)))
             return
-        free = next((i for i in range(5) if i not in self.window.worker.saved_memories), 0)
+        free = self.window.state.system.get("user_setting") or 0
         self.window.ask_memory_slot(
             f"Save '{entry.name}' to a memory",
             "The app loads this preset, stores it in the memory you pick, and then can go back to your tone.",

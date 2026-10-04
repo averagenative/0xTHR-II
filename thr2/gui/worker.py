@@ -54,7 +54,6 @@ class AmpWorker(threading.Thread):
         self._refresh_requested = False
         self.thr: THR | None = None
         self.last_patch = None
-        self.saved_memories: set = set()
 
     def stop(self) -> None:
         self._stop.set()
@@ -116,7 +115,6 @@ class AmpWorker(threading.Thread):
             GLib.idle_add(self._on_status, False, f"Connection error: {err}. See Console.")
             return False
         self._last_error = None
-        self.thr.saved_memories = self.saved_memories
         LOG.info("Connected over %s", self.thr.midi.kind)
         GLib.idle_add(self._on_status, True, self.thr.midi.kind)
         self._refresh()
@@ -220,10 +218,6 @@ class AmpWorker(threading.Thread):
 
     def _cmd_store_preset(self, preset: dict, name: str, index: int, hold: dict | None, restore: bool) -> None:
         from ..patch import rename_dump
-        if index in self.saved_memories:
-            GLib.idle_add(self._on_result, "stored", index, False,
-                          f"Memory {index + 1} was already saved. Turn the amp off and on before saving it again.")
-            return
         try:
             before = self.thr.dump()
             backup = thrl6p.from_patch(before, "Tone before saving", firmware=self.thr.firmware) if restore else None

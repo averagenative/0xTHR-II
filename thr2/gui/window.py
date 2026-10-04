@@ -346,7 +346,6 @@ class THRWindow(Adw.ApplicationWindow):
                         offer_restore: bool = False, parent=None) -> None:
         """Ask which memory to replace and under what name, then call on_save(index, name, restore)."""
         names = [self.state.memory_names[i] or f"Memory {i + 1}" for i in range(5)]
-        saved = sorted(i + 1 for i in self.worker.saved_memories)
         slot = Adw.ComboRow(title="Memory", model=Gtk.StringList.new([f"{i + 1}: {n}" for i, n in enumerate(names)]),
                             selected=selected if 0 <= selected < 5 else 0)
         name = Adw.EntryRow(title="Name", text=name_text or "")
@@ -358,9 +357,6 @@ class THRWindow(Adw.ApplicationWindow):
         if offer_restore:
             restore = Adw.SwitchRow(title="Go back to my current tone", active=True)
             rows.append(restore)
-        if saved:
-            body += (f" Already saved since connecting: {', '.join(map(str, saved))}. Turn the amp off and on "
-                     "before saving one of those again; the amp's firmware hangs otherwise.")
         dialog = Adw.AlertDialog(heading=heading, body=body, extra_child=rows)
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("save", "Replace memory")
@@ -372,9 +368,6 @@ class THRWindow(Adw.ApplicationWindow):
             if response != "save":
                 return
             index = slot.get_selected()
-            if index in self.worker.saved_memories:
-                self._on_error(f"Memory {index + 1} was already saved. Turn the amp off and on before saving it again.")
-                return
             on_save(index, name.get_text().strip(), restore.get_active() if restore else False)
 
         dialog.connect("response", respond)
