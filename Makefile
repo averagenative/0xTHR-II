@@ -6,7 +6,7 @@ ICONS := $(HOME)/.local/share/icons/hicolor/scalable/apps
 VERSION = $(shell $(PYTHON) -c 'import thr2; print(thr2.__version__)')
 APPIMAGE = dist/0xTHR-II-$(VERSION)-x86_64.AppImage
 
-.PHONY: check test compile gui install uninstall appimage release-appimage
+.PHONY: check test compile gui install uninstall appimage release-appimage dist release
 
 check: compile test
 
