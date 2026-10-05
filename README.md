@@ -16,16 +16,16 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 The easiest way is the AppImage from the [releases page](https://github.com/averagenative/0xTHR-II/releases):
 
 ```bash
-chmod +x 0xTHR-II-1.0.1-x86_64.AppImage
-./0xTHR-II-1.0.1-x86_64.AppImage --install
+chmod +x 0xTHR-II-1.0.2-x86_64.AppImage
+./0xTHR-II-1.0.2-x86_64.AppImage --install
 ```
 
-`--install` copies it to `~/Applications` and adds **THR-II Control** to your app grid with its icon. Run the AppImage with `cli` for the command-line tool (`./0xTHR-II-1.0.1-x86_64.AppImage cli info`), and with `--uninstall` to remove the menu entry. The AppImage is standalone: it bundles Python 3.13, GTK 4, libadwaita, and the GStreamer plugins the level meter needs, so you don't install anything else. It uses your system's graphics drivers, fonts, and PipeWire.
+`--install` copies it to `~/Applications` and adds **THR-II Control** to your app grid with its icon. Run the AppImage with `cli` for the command-line tool (`./0xTHR-II-1.0.2-x86_64.AppImage cli info`), and with `--uninstall` to remove the menu entry. The AppImage is standalone: it bundles Python 3.13, GTK 4, libadwaita, and the GStreamer plugins the level meter needs, so you don't install anything else. It uses your system's graphics drivers, fonts, and PipeWire.
 
 Or install the wheel for your user, which gives you the `thr2` command and the `thr2-gui` app:
 
 ```bash
-pip install --user thr2-1.0.1-py3-none-any.whl
+pip install --user thr2-1.0.2-py3-none-any.whl
 ```
 
 Use your system Python, so the app can find PyGObject and GTK.

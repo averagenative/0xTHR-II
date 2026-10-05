@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 (2026-10-04)
+
+- The level meter works in the standalone AppImage. The PipeWire plugin bundled from Debian 13 lacks the `on-disconnect` setting the meter asked for, so the meter never started; it now sets that only when the plugin has it.
+
 ## 1.0.1 (2026-10-04)
 
 - Standalone AppImage: `0xTHR-II-1.0.1-x86_64.AppImage` bundles Python 3.13, GTK 4, libadwaita, and GStreamer, so it runs without installing anything on any x86_64 desktop with glibc 2.41 or later (Fedora 42, Ubuntu 25.04, Debian 13, or later). `--install` adds it to the app grid with its icon; `--uninstall` removes that; `cli` runs the command-line tool.

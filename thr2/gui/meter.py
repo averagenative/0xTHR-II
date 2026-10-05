@@ -61,7 +61,8 @@ class LevelMonitor:
         src = self.pipeline.get_by_name("src")
         src.set_property("target-object", node)
         src.set_property("client-name", "THR-II Control meter")
-        src.set_property("on-disconnect", 2)
+        if src.find_property("on-disconnect"):   # PipeWire 1.2 and later; older plugins lack it
+            src.set_property("on-disconnect", 2)
         props = "props,node.dont-fallback=true,node.dont-reconnect=true"
         if capture_sink:
             props += ",stream.capture.sink=true"
