@@ -501,6 +501,11 @@ class THRWindow(Adw.ApplicationWindow):
         self.prefs["theme"] = theme.id
         settings.save(self.prefs)
 
+    def preview_theme(self, theme_id: str) -> None:
+        """Show a theme without saving it as the user's choice (for --theme and screenshots)."""
+        theme = themes.manager().apply(theme_id)
+        self.lookup_action("theme").set_state(GLib.Variant("s", theme.id))
+
     def _step_changed(self, group, _pspec) -> None:
         name = group.get_active_name()
         if name:

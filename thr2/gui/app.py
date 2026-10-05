@@ -40,11 +40,13 @@ def save_png(window: Gtk.Window, path: str, widget: Gtk.Widget | None = None) ->
 
 
 class THRApplication(Adw.Application):
-    def __init__(self, screenshot: str | None = None, height: int | None = None, demo: bool = False):
+    def __init__(self, screenshot: str | None = None, height: int | None = None, demo: bool = False,
+                 theme: str | None = None):
         super().__init__(application_id=APP_ID)
         self.screenshot = screenshot
         self.height = height
         self.demo = demo
+        self.theme = theme
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -76,8 +78,10 @@ class THRApplication(Adw.Application):
                 worker_class = DemoWorker
             window = THRWindow(self, on_first_state=self._capture if self.screenshot else None,
                                worker_class=worker_class)
+            if self.theme:
+                window.preview_theme(self.theme)
             if self.height:
-                window.set_default_size(720, self.height)
+                window.set_default_size(1320, self.height)
         window.present()
 
     def _capture(self, window):
@@ -94,11 +98,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--height", type=int, help="Window height, useful with --screenshot")
     parser.add_argument("--debug", action="store_true", help="Log raw frames and print the log to the terminal")
     parser.add_argument("--demo", action="store_true", help="Open with sample settings and no amp")
+    parser.add_argument("--theme", help="Show this theme without saving it as your choice (for screenshots)")
     args, rest = parser.parse_known_args(argv)
     if args.debug:
         log.to_stderr()
         log.enable_debug(True)
-    app = THRApplication(args.screenshot, args.height, args.demo)
+    app = THRApplication(args.screenshot, args.height, args.demo, args.theme)
     if args.screenshot or args.demo:
         app.set_flags(app.get_flags() | Gio.ApplicationFlags.NON_UNIQUE)
     return app.run([sys.argv[0], *rest])

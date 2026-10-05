@@ -4,6 +4,12 @@ Native Linux control for Yamaha THR-II amps (THR10II, THR10II Wireless, THR30II 
 
 **Status:** 1.0. A GTK4 app and a command-line tool, tested on a THR30II Wireless running firmware 1.40.0a on Fedora 44. Other THR-II models and firmware versions should work but haven't been tried.
 
+<p>
+  <a href="docs/screenshots/main.webp"><img src="docs/screenshots/thumbs/main.jpg" width="560" alt="The THR-II Control window in the THR30II Cream theme: the amp and recording level across the top, the compressor, effect, echo, and reverb in the middle, and the noise gate and five user memories at the bottom, over the Y-pattern speaker grille."></a>
+</p>
+
+Click the screenshot for the full size.
+
 ## Requirements
 
 - Linux with ALSA. The amp shows up as a class-compliant USB audio and MIDI device; no driver needed.
@@ -46,6 +52,19 @@ The window mirrors the amp: turn a knob on the amp and the matching knob in the 
 Each knob responds to dragging, the scroll wheel, and the arrow keys. **Knob step** sets how far one scroll notch or arrow-key press moves a knob: 1, 2, 5, or 10 (in dB for the gate threshold). Hold Shift to move by 1 without changing the setting. Page Up and Page Down move ten steps. The app remembers the step in `~/.config/thr2/settings.json`.
 
 The palette button in the header bar picks a theme: the three THR-II finishes (**THR30II Cream**, **THR30II White**, and **THR30II Black**, with knob caps and the Y-pattern speaker grille), **Neon**, **Bare Metal**, or **Adwaita**, which follows your desktop's light or dark style and accent color. The app remembers your choice.
+
+<table>
+  <tr>
+    <td align="center"><a href="docs/screenshots/theme-cream.webp"><img src="docs/screenshots/thumbs/theme-cream.jpg" width="260" alt="The THR-II Control window in the THR30II Cream theme: cream panels, black knob caps, and the black Y-pattern speaker grille."></a><br>THR30II Cream</td>
+    <td align="center"><a href="docs/screenshots/theme-white.webp"><img src="docs/screenshots/thumbs/theme-white.jpg" width="260" alt="The THR-II Control window in the THR30II White theme: white panels, white knob caps, and a gray Y-pattern grille."></a><br>THR30II White</td>
+    <td align="center"><a href="docs/screenshots/theme-black.webp"><img src="docs/screenshots/thumbs/theme-black.jpg" width="260" alt="The THR-II Control window in the THR30II Black theme: black panels, black knob caps, and a black Y-pattern grille."></a><br>THR30II Black</td>
+  </tr>
+  <tr>
+    <td align="center"><a href="docs/screenshots/theme-neon.webp"><img src="docs/screenshots/thumbs/theme-neon.jpg" width="260" alt="The THR-II Control window in the Neon theme: dark panels with glowing magenta and cyan accents."></a><br>Neon</td>
+    <td align="center"><a href="docs/screenshots/theme-metal.webp"><img src="docs/screenshots/thumbs/theme-metal.jpg" width="260" alt="The THR-II Control window in the Bare Metal theme: brushed metal panels."></a><br>Bare Metal</td>
+    <td align="center"><a href="docs/screenshots/theme-adwaita.webp"><img src="docs/screenshots/thumbs/theme-adwaita.jpg" width="260" alt="The THR-II Control window in the Adwaita theme: your desktop's own style and accent color."></a><br>Adwaita</td>
+  </tr>
+</table>
 
 The **Recording level** panel shows what your computer records over USB, with a peak readout and a **Clipped** warning that stays lit until you click it. With headphones plugged into the amp, the **Guitar** knob (the amp's GUITAR knob) only changes what you hear, so you can set the recording level with **Master** and then turn **Guitar** down to a comfortable level. The meter reads the amp's PipeWire capture alongside REAPER, so it doesn't interrupt a recording.
 
