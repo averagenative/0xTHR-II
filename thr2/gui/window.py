@@ -285,8 +285,9 @@ class THRWindow(Adw.ApplicationWindow):
         self.waiting = Adw.StatusPage(
             icon_name="audio-speakers-symbolic",
             title="Connect your THR-II",
-            description="Turn the amp on and connect it with a USB cable, or connect a THR-II Wireless in "
-                        "Bluetooth settings. This window finds it automatically.",
+            description="Turn the amp on and connect it with a USB cable, or pair a THR-II Wireless in "
+                        "Bluetooth settings. This window finds it automatically, and uses USB when both "
+                        "are available.",
         )
         bt_button = Gtk.Button(label="Connect over Bluetooth", halign=Gtk.Align.CENTER)
         bt_button.add_css_class("pill")

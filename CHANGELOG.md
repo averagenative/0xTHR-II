@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 (2026-10-07)
+
+- Fixes the amp going silent over USB, with "Timed out waiting for the amp to answer" on every change. A THR30II Wireless stops answering over USB soon after its Bluetooth link comes up, and stays silent until it's turned off and on, even after the link drops. BlueZ reconnects a paired amp by itself, so whenever the app or the command-line tool uses USB, it now disconnects the amp over Bluetooth and marks it untrusted, which stops BlueZ reconnecting it. **Connect over Bluetooth**, or starting the app without the USB cable, still connects it over Bluetooth.
+- If the amp stops answering anyway, the app disconnects after two missed answers in a row and asks you to turn the amp off and on, instead of timing out on every change.
+- If the amp stopped answering while the app read its settings right after connecting, the app stopped trying to reconnect until it was restarted. It now keeps trying.
+
 ## 1.0.2 (2026-10-04)
 
 - The level meter works in the standalone AppImage. The PipeWire plugin bundled from Debian 13 lacks the `on-disconnect` setting the meter asked for, so the meter never started; it now sets that only when the plugin has it.

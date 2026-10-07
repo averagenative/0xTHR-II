@@ -23,9 +23,10 @@ LOG = log.get("worker")
 
 from .. import thrl6p
 from ..client import THR, THRError
-from ..device import DeviceNotFound
+from ..device import DeviceNotFound, release_bluetooth
 
 AMP_KNOBS = ("Bass", "Mid", "Treble", "Drive", "Master")
+MAX_MISSED = 2
 
 
 @dataclass
@@ -54,6 +55,7 @@ class AmpWorker(threading.Thread):
         self._force_bluetooth = False
         self._next_bluetooth = 0.0
         self._bluetooth_backoff = 5.0
+        self._next_release = 0.0
         self._refresh_requested = False
         self.thr: THR | None = None
         self.last_patch = None
@@ -85,6 +87,7 @@ class AmpWorker(threading.Thread):
                 self._flush_params()
                 self._run_commands()
                 self._pump_events()
+                self._keep_bluetooth_down()
                 if self._refresh_requested:
                     self._refresh_requested = False
                     self._refresh()
@@ -92,6 +95,8 @@ class AmpWorker(threading.Thread):
                 LOG.warning("%s", err)
                 if self._device_gone():
                     self._disconnect(str(err))
+                elif self.thr.missed >= MAX_MISSED:
+                    self._disconnect("The amp stopped answering. Turn it off and on.")
                 else:
                     GLib.idle_add(self._on_error, str(err))
             except Exception as err:
@@ -125,8 +130,20 @@ class AmpWorker(threading.Thread):
         self._next_bluetooth, self._bluetooth_backoff = 0.0, 5.0
         LOG.info("Connected over %s", self.thr.midi.kind)
         GLib.idle_add(self._on_status, True, self.thr.midi.kind)
-        self._refresh()
+        try:
+            self._refresh()
+        except (OSError, THRError) as err:
+            LOG.warning("Reading the amp's settings failed: %s", err)
+            self._disconnect("The amp stopped answering. Turn it off and on.")
+            return False
         return True
+
+    def _keep_bluetooth_down(self) -> None:
+        """Over USB, drop a Bluetooth link that comes up mid-session (see release_bluetooth)."""
+        if self.thr.midi.kind != "USB" or time.monotonic() < self._next_release:
+            return
+        self._next_release = time.monotonic() + 2.0
+        release_bluetooth()
 
     def _device_gone(self) -> bool:
         return self.thr is None or not self.thr.midi.alive()

@@ -61,8 +61,34 @@ def find_thr(name_hint: str = "THR") -> dict | None:
         return {
             "device": path, "name": dev.get("Name"), "address": dev.get("Address"),
             "connected": bool(dev.get("Connected")), "paired": bool(dev.get("Paired")),
+            "trusted": bool(dev.get("Trusted")),
         }
     return None
+
+
+def release(name_hint: str = "THR") -> bool:
+    """Disconnect a paired THR and stop BlueZ reconnecting it by itself.
+
+    BlueZ reconnects a trusted LE device whenever it advertises. Disconnecting an untrusted
+    one holds it off until something calls Connect, as BleMidi does. Returns True when a
+    link was up and got dropped.
+    """
+    info = find_thr(name_hint)
+    if info is None or not (info["connected"] or info["trusted"]):
+        return False
+    try:
+        bus = _bus()
+        if info["trusted"]:
+            bus.call_sync(BLUEZ, info["device"], "org.freedesktop.DBus.Properties", "Set",
+                          GLib.Variant("(ssv)", ("org.bluez.Device1", "Trusted", GLib.Variant("b", False))),
+                          None, Gio.DBusCallFlags.NONE, 5000, None)
+        if info["connected"]:
+            bus.call_sync(BLUEZ, info["device"], "org.bluez.Device1", "Disconnect", None, None,
+                          Gio.DBusCallFlags.NONE, 5000, None)
+    except GLib.Error as err:
+        LOG.warning("Couldn't disconnect %s over Bluetooth: %s", info["name"], err.message)
+        return False
+    return info["connected"]
 
 
 def _characteristic(bus, device_path: str) -> str | None:

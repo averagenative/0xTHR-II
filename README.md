@@ -160,6 +160,8 @@ The Console button opens a live log of connections, commands, timeouts, and erro
 
 THR-II Wireless amps also take control over Bluetooth LE. Pair the amp once in GNOME's Bluetooth settings (it appears as `LE_THRII`). After that, the app uses USB when the cable is plugged in and Bluetooth otherwise, and connects the amp by itself; the window title shows which one is active. The command-line tool does the same, or takes `--via usb` or `--via bluetooth`.
 
+While the app uses USB, it keeps the amp's Bluetooth link down. A THR30II Wireless stops answering over USB soon after a Bluetooth connection comes up, until it's turned off and on. So the app disconnects the amp over Bluetooth and marks it untrusted, which stops BlueZ reconnecting it by itself. **Connect over Bluetooth**, or starting the app without the USB cable, connects it again.
+
 Bluetooth carries control only. Recording through the amp still needs the USB cable. Only one program can control the amp over Bluetooth at a time, so close THR Remote on a phone first.
 
 The amp's MIDI characteristic reports the short UUID `0x6BF3` instead of the standard BLE-MIDI one, so PipeWire's built-in BLE-MIDI support doesn't pick it up. `thr2/ble.py` talks to it directly through BlueZ.

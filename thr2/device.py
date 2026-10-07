@@ -105,6 +105,22 @@ class RawMidi:
         self.close()
 
 
+def release_bluetooth() -> None:
+    """Keep the amp's Bluetooth LE link down while it's controlled over USB.
+
+    A THR30II Wireless on firmware 1.40.0a stops answering over USB within seconds of its
+    Bluetooth link coming up, and stays silent until it's turned off and on, even after the
+    link drops. BlueZ reconnects a paired amp by itself, so this disconnects it and stops
+    BlueZ reconnecting it. Connect over Bluetooth in the app brings it back.
+    """
+    try:
+        from .ble import release
+    except ImportError:
+        return
+    if release():
+        LOG.info("Disconnected the amp over Bluetooth: it stops answering over USB when both are connected")
+
+
 def open_transport(via: str = "auto", bluetooth: bool = True):
     """Open the amp over USB or Bluetooth.
 

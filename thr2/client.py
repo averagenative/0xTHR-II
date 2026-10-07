@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import log
-from .device import RawMidi, open_transport
+from .device import RawMidi, open_transport, release_bluetooth
 from .patch import Patch, parse_patch
 from .sysex import (
     IDENTITY_REQUEST, Frame, float_word, parse_identity, unpack_words, word_float, words,
@@ -116,12 +116,15 @@ class THR:
     firmware: int = 0
     symbols: list[str] = field(default_factory=list)
     events: queue.Queue = field(default_factory=queue.Queue)
+    missed: int = 0
     _counters: dict = field(default_factory=lambda: {0: 0, 1: 0})
 
     @classmethod
     def open(cls, path: str | None = None, load_symbols: bool = True, via: str = "auto",
              bluetooth: bool = True) -> THR:
         thr = cls(RawMidi(path) if path else open_transport(via, bluetooth))
+        if thr.midi.kind == "USB":
+            release_bluetooth()
         thr.connect(load_symbols=load_symbols)
         return thr
 
@@ -154,7 +157,8 @@ class THR:
                 break
         if not self.identity:
             self.midi.close()
-            raise THRError("No identity reply. The amp may be off or in firmware-update mode.")
+            raise THRError("The amp isn't answering. Turn it off and on; if it's updating its firmware, "
+                           "let that finish.")
         LOG.info("Amp identified: family 0x%02x model %d firmware %s", self.identity["family"],
                  self.identity["model"], self.identity["version"])
         self._drain(0.3)
@@ -228,7 +232,9 @@ class THR:
                 continue
             if len(data) >= total:
                 data = data[:total]
+                self.missed = 0
                 return Answer(unpack_words(bytes(data)), bytes(data))
+        self.missed += 1
         LOG.warning("Timed out waiting for an answer (group %s, got %d of %s bytes)", "AB"[ab], len(data), total)
         raise THRError("Timed out waiting for the amp to answer.")
 
